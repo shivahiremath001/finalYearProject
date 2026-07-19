@@ -22,15 +22,27 @@ from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import os
-from dotenv import load_dotenv
+
+# Load .env file — works whether or not python-dotenv is installed
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # python-dotenv not installed: manually parse .env file if it exists
+    _env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(_env_path):
+        with open(_env_path) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line and not _line.startswith("#") and "=" in _line:
+                    _k, _, _v = _line.partition("=")
+                    os.environ.setdefault(_k.strip(), _v.strip())
 
 import models
 from database import engine, SessionLocal
 from schemas import IngestRequest, ScanResponse, MachineOut, ScanOut
 from scoring import score
 import crud
-
-load_dotenv()
 
 # ── Create all tables on startup ─────────────────────────────────────────────
 models.Base.metadata.create_all(bind=engine)

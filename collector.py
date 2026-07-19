@@ -545,8 +545,10 @@ class ScannerApp(tk.Tk):
         try:
             api_key = load_api_key()
             headers = {"X-API-Key": api_key}
-            # Note: verify=False allows self-signed certificates for lab/demo use.
-            # In production, this should be True and the server should use a trusted CA.
+            # verify=False allows self-signed certs in lab/demo environments.
+            # Suppress the console warning it produces so the GUI stays clean.
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
             resp = requests.post(self.api_url, json=payload, headers=headers, timeout=15, verify=False)
             if resp.status_code == 200:
                 self.after(0, self._show_result, resp.json())
