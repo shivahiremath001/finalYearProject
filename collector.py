@@ -41,6 +41,7 @@ _BASE = os.path.dirname(
     sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
 )
 CONFIG_FILE = os.path.join(_BASE, "r3p_server.txt")
+AGENT_CONFIG_FILE = os.path.join(_BASE, "agent_config.json")
 
 COLORS = {
     "bg":       "#0d1117",
@@ -72,6 +73,16 @@ def load_server_ip():
     except Exception:
         pass
     return None
+
+def load_api_key():
+    try:
+        if os.path.exists(AGENT_CONFIG_FILE):
+            with open(AGENT_CONFIG_FILE, "r") as f:
+                config = json.load(f)
+                return config.get("api_key", "")
+    except Exception:
+        pass
+    return ""
 
 
 def save_server_ip(ip: str):
@@ -532,8 +543,11 @@ class ScannerApp(tk.Tk):
         }
 
         try:
-            headers = {"X-API-Key": "R3P-DEMO-KEY"}
-            resp = requests.post(self.api_url, json=payload, headers=headers, timeout=15)
+            api_key = load_api_key()
+            headers = {"X-API-Key": api_key}
+            # Note: verify=False allows self-signed certificates for lab/demo use.
+            # In production, this should be True and the server should use a trusted CA.
+            resp = requests.post(self.api_url, json=payload, headers=headers, timeout=15, verify=False)
             if resp.status_code == 200:
                 self.after(0, self._show_result, resp.json())
             else:
@@ -582,32 +596,61 @@ class ScannerApp(tk.Tk):
                  font=("Segoe UI", 10, "bold"),
                  bg=COLORS["card"], fg=color).pack(side="left")
 
+        # Handle both list (old backend) and dict (new backend) formats
+        if isinstance(flagged, dict):
+            total_flagged = sum(len(items) for items in flagged.values())
+        else:
+            total_flagged = len(flagged)
+
         tk.Label(inner,
                  text=f"Machine: {platform.node()}   |   "
-                      f"{len(flagged)} / {len(CHECKS)} checks flagged",
+                      f"{total_flagged} checks flagged",
                  font=("Segoe UI", 8),
                  bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w", pady=(0, 12))
 
         tk.Frame(inner, bg=COLORS["border"], height=1).pack(fill="x", pady=(0, 10))
 
-        if flagged:
+        if total_flagged > 0:
             tk.Label(inner, text="⚠  Issues Found:",
                      font=("Segoe UI", 9, "bold"),
                      bg=COLORS["card"], fg=COLORS["warning"]).pack(anchor="w", pady=(0, 4))
-            for item in flagged[:10]:
-                r2 = tk.Frame(inner, bg=COLORS["card"])
-                r2.pack(anchor="w", pady=1)
-                tk.Label(r2, text="•",
-                         font=("Segoe UI", 9),
-                         bg=COLORS["card"], fg=color).pack(side="left", padx=(8, 4))
-                tk.Label(r2, text=item.replace("_", " ").title(),
-                         font=("Segoe UI", 9),
-                         bg=COLORS["card"], fg=COLORS["text"]).pack(side="left")
-            if len(flagged) > 10:
-                tk.Label(inner,
-                         text=f"   … and {len(flagged) - 10} more (see server dashboard)",
-                         font=("Segoe UI", 8),
-                         bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w")
+            
+            # Display items grouped by phase if it's a dict
+            if isinstance(flagged, dict):
+                for phase, items in flagged.items():
+                    if not items:
+                        continue
+                    
+                    # Phase Header
+                    tk.Label(inner, text=f"[{phase}]",
+                             font=("Segoe UI", 8, "bold"),
+                             bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w", pady=(6, 2))
+                             
+                    for item in items:
+                        r2 = tk.Frame(inner, bg=COLORS["card"])
+                        r2.pack(anchor="w", pady=1)
+                        tk.Label(r2, text="•",
+                                 font=("Segoe UI", 9),
+                                 bg=COLORS["card"], fg=color).pack(side="left", padx=(8, 4))
+                        tk.Label(r2, text=item.replace("_", " ").title(),
+                                 font=("Segoe UI", 9),
+                                 bg=COLORS["card"], fg=COLORS["text"]).pack(side="left")
+            else:
+                # Fallback if flat list
+                for item in flagged[:10]:
+                    r2 = tk.Frame(inner, bg=COLORS["card"])
+                    r2.pack(anchor="w", pady=1)
+                    tk.Label(r2, text="•",
+                             font=("Segoe UI", 9),
+                             bg=COLORS["card"], fg=color).pack(side="left", padx=(8, 4))
+                    tk.Label(r2, text=item.replace("_", " ").title(),
+                             font=("Segoe UI", 9),
+                             bg=COLORS["card"], fg=COLORS["text"]).pack(side="left")
+                if len(flagged) > 10:
+                    tk.Label(inner,
+                             text=f"   … and {len(flagged) - 10} more (see server dashboard)",
+                             font=("Segoe UI", 8),
+                             bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w")
         else:
             tk.Label(inner, text="✅  No issues detected — system looks clean!",
                      font=("Segoe UI", 10),

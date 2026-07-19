@@ -1,15 +1,15 @@
 """
 scoring.py — Risk scoring engine.
 
-Maps the 18 security parameters (+ collector.py's fields) to a 0–100 risk
-score and classifies each machine as SAFE / LOW RISK / HIGH RISK / CRITICAL.
+Maps the 18 security parameters (+ collector.py's fields) to a severity-weighted 
+risk score (0–100) and classifies each machine as SAFE / LOW RISK / HIGH RISK / CRITICAL.
 
-Kill-chain phase weights:
-  Entry Vector          30 pts  (4 params)
-  Execution             25 pts  (4 params)
-  Evasion/Persistence   20 pts  (4 params)
-  Lateral Movement      15 pts  (3 params)
-  Recovery Prevention   10 pts  (3 params)
+Weighting Rationale:
+Each check is assigned a severity weight from 1 to 5:
+  Weight 5 (Critical): e.g., LSASS disabled, backups/VSS deleted, SMBv1 enabled.
+  Weight 1-4 (Lower impact): e.g., AutoRun enabled, Guest account active.
+The final score is normalized to 100. If any single check with weight 5 fails, 
+the result is escalated to at least "HIGH RISK" regardless of the total score.
 """
 
 from schemas import CollectorData
@@ -22,35 +22,35 @@ PHASES = {
     "Recovery Prevention": ["vss_deleted", "backup_absent", "bitlocker_off"]
 }
 
-# ── Parameter weights (name → contribution to risk score 0-100) ─────────────
+# ── Parameter weights (name → severity weight 1-5) ─────────────
 PARAM_WEIGHTS: dict[str, float] = {
-    # Entry Vector (total 30)
-    "smb_v1_enabled":          10.0,
-    "rdp_enabled":              8.0,   # mapped from rdp_open
-    "autorun_enabled":          6.0,
-    "open_network_shares":      6.0,
+    # Entry Vector
+    "smb_v1_enabled":           5.0,  # Critical
+    "rdp_enabled":              4.0,  # High
+    "autorun_enabled":          2.0,  # Low
+    "open_network_shares":      3.0,  # Medium
 
-    # Execution (total 25)
-    "macro_execution_enabled":  7.0,
-    "powershell_unrestricted":  7.0,
-    "uac_disabled":             6.0,
-    "applocker_absent":         5.0,
+    # Execution
+    "macro_execution_enabled":  4.0,
+    "powershell_unrestricted":  4.0,
+    "uac_disabled":             3.0,
+    "applocker_absent":         2.0,
 
-    # Evasion/Persistence (total 20)
-    "defender_disabled":        7.0,
-    "firewall_disabled":        5.0,   # mapped from firewall_on == False
-    "tamper_protection_off":    4.0,
-    "event_logging_disabled":   4.0,
+    # Evasion/Persistence
+    "defender_disabled":        4.0,
+    "firewall_disabled":        4.0,
+    "tamper_protection_off":    3.0,
+    "event_logging_disabled":   2.0,
 
-    # Lateral Movement (total 15)
-    "admin_shares_enabled":     6.0,
-    "lsass_protection_off":     5.0,
-    "guest_account_active":     4.0,
+    # Lateral Movement
+    "admin_shares_enabled":     3.0,
+    "lsass_protection_off":     5.0,  # Critical
+    "guest_account_active":     2.0,
 
-    # Recovery Prevention (total 10)
-    "vss_deleted":              4.0,
-    "backup_absent":            4.0,   # mapped from backup_configured == False
-    "bitlocker_off":            2.0,
+    # Recovery Prevention
+    "vss_deleted":              5.0,  # Critical
+    "backup_absent":            5.0,  # Critical
+    "bitlocker_off":            5.0,  # Critical
 }
 
 
@@ -99,12 +99,17 @@ def score(data: CollectorData) -> tuple[float, str, list[str]]:
         flagged     dict mapping phase name to list of flagged parameter names
     """
     params = _translate(data)
-    total  = 0.0
+    total_weight = 0.0
+    max_weight = sum(PARAM_WEIGHTS.values())
+    has_critical_failure = False
     flagged: dict[str, list[str]] = {phase: [] for phase in PHASES}
 
     for param, is_risky in params.items():
         if is_risky:
-            total += PARAM_WEIGHTS.get(param, 0.0)
+            weight = PARAM_WEIGHTS.get(param, 0.0)
+            total_weight += weight
+            if weight == 5.0:
+                has_critical_failure = True
             for phase, p_list in PHASES.items():
                 if param in p_list:
                     flagged[phase].append(param)
@@ -113,6 +118,8 @@ def score(data: CollectorData) -> tuple[float, str, list[str]]:
     # Remove empty phases
     flagged = {k: v for k, v in flagged.items() if v}
 
+    # Normalize to 0-100 scale
+    total = (total_weight / max_weight) * 100.0 if max_weight > 0 else 0.0
     total = min(total, 100.0)
 
     if total < 20:
@@ -123,5 +130,9 @@ def score(data: CollectorData) -> tuple[float, str, list[str]]:
         risk_class = "HIGH RISK"
     else:
         risk_class = "CRITICAL"
+
+    # Escalation rule for weight 5
+    if has_critical_failure and risk_class in ["SAFE", "LOW RISK"]:
+        risk_class = "HIGH RISK"
 
     return round(total, 2), risk_class, flagged
