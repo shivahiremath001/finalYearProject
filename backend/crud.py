@@ -33,7 +33,7 @@ def upsert_machine(db: Session, req: IngestRequest, ip: str,
 
 def create_scan(db: Session, req: IngestRequest, machine_id: int,
                 ip: str, risk_score: float, risk_class: str,
-                flagged: list[str]) -> ConfigurationScan:
+                flagged: dict[str, list[str]]) -> ConfigurationScan:
     """Insert one scan row from an IngestRequest."""
     d = req.data
     scan = ConfigurationScan(
@@ -71,7 +71,7 @@ def create_scan(db: Session, req: IngestRequest, machine_id: int,
 
         risk_score=risk_score,
         risk_class=risk_class,
-        flagged_parameters=",".join(flagged),
+        flagged_parameters=",".join([item for sublist in flagged.values() for item in sublist]),
     )
     db.add(scan)
     db.flush()

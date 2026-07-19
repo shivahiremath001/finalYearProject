@@ -532,7 +532,8 @@ class ScannerApp(tk.Tk):
         }
 
         try:
-            resp = requests.post(self.api_url, json=payload, timeout=15)
+            headers = {"X-API-Key": "R3P-DEMO-KEY"}
+            resp = requests.post(self.api_url, json=payload, headers=headers, timeout=15)
             if resp.status_code == 200:
                 self.after(0, self._show_result, resp.json())
             else:

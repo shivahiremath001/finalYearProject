@@ -14,6 +14,14 @@ Kill-chain phase weights:
 
 from schemas import CollectorData
 
+PHASES = {
+    "Entry Vector": ["smb_v1_enabled", "rdp_enabled", "autorun_enabled", "open_network_shares"],
+    "Execution": ["macro_execution_enabled", "powershell_unrestricted", "uac_disabled", "applocker_absent"],
+    "Evasion & Persistence": ["defender_disabled", "firewall_disabled", "tamper_protection_off", "event_logging_disabled"],
+    "Lateral Movement": ["admin_shares_enabled", "lsass_protection_off", "guest_account_active"],
+    "Recovery Prevention": ["vss_deleted", "backup_absent", "bitlocker_off"]
+}
+
 # ── Parameter weights (name → contribution to risk score 0-100) ─────────────
 PARAM_WEIGHTS: dict[str, float] = {
     # Entry Vector (total 30)
@@ -88,16 +96,22 @@ def score(data: CollectorData) -> tuple[float, str, list[str]]:
     Returns:
         risk_score  (0.0 – 100.0)
         risk_class  ("SAFE" | "LOW RISK" | "HIGH RISK" | "CRITICAL")
-        flagged     list of parameter names that contributed to risk
+        flagged     dict mapping phase name to list of flagged parameter names
     """
     params = _translate(data)
     total  = 0.0
-    flagged: list[str] = []
+    flagged: dict[str, list[str]] = {phase: [] for phase in PHASES}
 
     for param, is_risky in params.items():
         if is_risky:
             total += PARAM_WEIGHTS.get(param, 0.0)
-            flagged.append(param)
+            for phase, p_list in PHASES.items():
+                if param in p_list:
+                    flagged[phase].append(param)
+                    break
+    
+    # Remove empty phases
+    flagged = {k: v for k, v in flagged.items() if v}
 
     total = min(total, 100.0)
 

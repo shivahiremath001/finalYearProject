@@ -13,7 +13,8 @@ The collector.py / R3P_Agent.exe on any machine should point to:
     API_URL = "http://<SERVER_IP>:8000/ingest"
 """
 
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, Security
+from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -51,11 +52,21 @@ def get_db():
         db.close()
 
 
+# ── API Key Auth ──────────────────────────────────────────────────────────────
+API_KEY = "R3P-DEMO-KEY"
+api_key_header = APIKeyHeader(name="X-API-Key")
+
+def get_api_key(api_key: str = Security(api_key_header)):
+    if api_key != API_KEY:
+        raise HTTPException(status_code=403, detail="Could not validate credentials")
+    return api_key
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /ingest  ← This is what collector.py calls
 # ─────────────────────────────────────────────────────────────────────────────
 @app.post("/ingest", response_model=ScanResponse)
-def ingest(req: IngestRequest, request: Request, db: Session = Depends(get_db)):
+def ingest(req: IngestRequest, request: Request, db: Session = Depends(get_db), api_key: str = Security(get_api_key)):
     """
     Receives the telemetry payload from collector.py, scores the machine,
     persists it to the database, and returns the risk result.

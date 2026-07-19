@@ -64,7 +64,7 @@ class ScanResponse(BaseModel):
     hostname:   str
     risk_score: float
     risk_class: str
-    flagged:    list[str]
+    flagged:    dict[str, list[str]]
 
 
 class MachineOut(BaseModel):
