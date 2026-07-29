@@ -18,7 +18,7 @@ backward-compatible as the collector grows.
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime
 
 
@@ -65,6 +65,27 @@ class ScanResponse(BaseModel):
     risk_score: float
     risk_class: str
     flagged:    dict[str, list[str]]
+    mitre_hits: list[dict] = []
+    anomaly:    Optional[dict] = None
+
+
+class MitreHit(BaseModel):
+    """One MITRE ATT&CK technique hit for a flagged parameter"""
+    param_key:      str
+    phase:          str
+    technique_id:   str
+    technique_name: str
+    tactic:         str
+
+
+class AnomalyInfo(BaseModel):
+    """Anomaly detection result for a scan"""
+    is_anomaly:    bool = False
+    z_score:       Optional[float] = None
+    rolling_mean:  Optional[float] = None
+    rolling_std:   Optional[float] = None
+    direction:     str = "normal"   # "spike" | "drop" | "normal"
+    scans_analyzed: int = 0
 
 
 class MachineOut(BaseModel):
@@ -92,3 +113,78 @@ class ScanOut(BaseModel):
     flagged_parameters: str
 
     model_config = {"from_attributes": True}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Admin Auth
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AdminLogin(BaseModel):
+    """POST /admin/login body"""
+    username: str
+    password: str
+
+
+class TokenOut(BaseModel):
+    """Returned after successful admin login"""
+    access_token: str
+    token_type: str = "bearer"
+    username: str
+
+
+class AdminOut(BaseModel):
+    """GET /admin/me response"""
+    id:       int
+    username: str
+    is_active: bool
+    model_config = {"from_attributes": True}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Remediation Commands
+# ─────────────────────────────────────────────────────────────────────────────
+
+class IssueCommand(BaseModel):
+    """POST /commands/{hostname} — admin queues a fix"""
+    command_key: str
+
+
+class CommandOut(BaseModel):
+    """Returned to agent on GET /commands/{hostname}"""
+    id:          int
+    command_key: str
+    issued_at:   Optional[datetime]
+    status:      str
+    reboot_required: bool = False
+    model_config = {"from_attributes": True}
+
+
+class CommandAck(BaseModel):
+    """POST /commands/{hostname}/{id}/ack — agent reports result"""
+    status: str          # 'done' or 'failed'
+    output: Optional[str] = None
+
+
+class CommandHistoryOut(BaseModel):
+    """Full command record for admin history view"""
+    id:           int
+    hostname:     str
+    command_key:  str
+    status:       str
+    issued_at:    Optional[datetime]
+    completed_at: Optional[datetime]
+    output:       Optional[str]
+    issued_by:    str
+    reboot_required: bool
+    model_config = {"from_attributes": True}
+
+
+class RemediationCommandDef(BaseModel):
+    """Definition of an available remediation command (from allowlist)"""
+    key:         str
+    label:       str
+    description: str
+    phase:       str
+    severity:    str
+    param_key:   str
+    reboot_required: bool

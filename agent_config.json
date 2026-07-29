@@ -1,3 +1,6 @@
 {
-    "api_key": "R3P-DEMO-KEY"
+    "api_key": "R3P-DEMO-KEY",
+    "scan_interval_seconds": 60,
+    "command_poll_enabled": true,
+    "auto_start_enabled": true
 }

@@ -1,34 +1,55 @@
 """
 main.py — FastAPI application entry point.
 
-Run with (single machine, dev):
+Run (dev):
     cd backend
     uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
-Run with multiple workers (recommended for 100+ agents):
-    cd backend
+Run (production, multiple workers):
     uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 
-Run with HTTPS (self-signed cert, after generating with generate_cert.bat):
-    cd backend
-    uvicorn main:app --ssl-keyfile=certs\key.pem --ssl-certfile=certs\cert.pem --host 0.0.0.0 --port 8000
+Run (HTTPS with self-signed cert):
+    uvicorn main:app --ssl-keyfile=certs\\key.pem --ssl-certfile=certs\\cert.pem --host 0.0.0.0 --port 8000
 
-The collector.py / R3P_Agent.exe on any machine should point to:
-    API_URL = "http://<SERVER_IP>:8000/ingest" (or https if using SSL)
+Endpoints
+─────────
+POST /ingest                          ← agent pushes telemetry (X-API-Key)
+GET  /machines                        ← list all machines
+GET  /machines/{hostname}             ← single machine detail
+GET  /machines/{hostname}/scans       ← scan history
+GET  /health                          ← liveness check
+
+POST /admin/login                     ← admin username+password → JWT
+GET  /admin/me                        ← current admin info (Bearer JWT)
+
+POST /commands/{hostname}             ← admin queues a remediation fix (Bearer JWT)
+GET  /commands/{hostname}             ← agent polls for pending commands (X-API-Key)
+POST /commands/{hostname}/{cmd_id}/ack ← agent acks completion (X-API-Key)
+GET  /commands/{hostname}/history     ← admin views command history (Bearer JWT)
+GET  /remediation/available           ← list all available fix commands (Bearer JWT)
+
+WS  /ws/live                          ← WebSocket: real-time scan events → dashboard
 """
 
-from fastapi import FastAPI, Depends, HTTPException, Request, Security
+from fastapi import (
+    FastAPI, Depends, HTTPException, Request, Security,
+    WebSocket, WebSocketDisconnect, status,
+)
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone
 import os
+import json
+import asyncio
+from typing import Set
 
-# Load .env file — works whether or not python-dotenv is installed
+# Load .env file
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    # python-dotenv not installed: manually parse .env file if it exists
     _env_path = os.path.join(os.path.dirname(__file__), ".env")
     if os.path.exists(_env_path):
         with open(_env_path) as _f:
@@ -40,20 +61,31 @@ except ImportError:
 
 import models
 from database import engine, SessionLocal
-from schemas import IngestRequest, ScanResponse, MachineOut, ScanOut
-from scoring import score
+from schemas import (
+    IngestRequest, ScanResponse, MachineOut, ScanOut,
+    AdminLogin, TokenOut, AdminOut,
+    IssueCommand, CommandOut, CommandAck, CommandHistoryOut,
+    RemediationCommandDef,
+)
+from scoring import score, get_mitre_mapping, get_mitre_hits, MITRE_MAPPING
 import crud
+from auth import (
+    verify_password, create_access_token, get_current_admin,
+    ensure_default_admin, hash_password,
+)
+from remediation_registry import get_all_commands, get_command
+from anomaly import detect_anomaly
 
 # ── Create all tables on startup ─────────────────────────────────────────────
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="R3P — Ransomware Readiness & Risk Profiler",
-    description="Receives telemetry from Windows agents and scores security posture.",
-    version="1.0.0",
+    description="Receives telemetry from Windows agents, scores security posture, and enables remote remediation.",
+    version="2.0.0",
 )
 
-# ── CORS: allow the Vite frontend (and any origin during dev) ─────────────────
+# ── CORS: allow the React frontend ───────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],          # tighten to your frontend URL in production
@@ -61,6 +93,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── WebSocket connection manager ──────────────────────────────────────────────
+class LiveConnectionManager:
+    """Manages active WebSocket connections from the admin dashboard."""
+
+    def __init__(self):
+        self.active: Set[WebSocket] = set()
+
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self.active.add(ws)
+
+    def disconnect(self, ws: WebSocket):
+        self.active.discard(ws)
+
+    async def broadcast(self, data: dict):
+        """Send a JSON event to all connected dashboard clients."""
+        msg = json.dumps(data)
+        dead = set()
+        for ws in self.active:
+            try:
+                await ws.send_text(msg)
+            except Exception:
+                dead.add(ws)
+        self.active -= dead
+
+
+manager = LiveConnectionManager()
 
 
 # ── DB dependency ─────────────────────────────────────────────────────────────
@@ -72,9 +133,10 @@ def get_db():
         db.close()
 
 
-# ── API Key Auth ──────────────────────────────────────────────────────────────
+# ── API Key Auth (for agents) ─────────────────────────────────────────────────
 API_KEY = os.environ.get("API_KEY", "R3P-DEMO-KEY")
 api_key_header = APIKeyHeader(name="X-API-Key")
+
 
 def get_api_key(api_key: str = Security(api_key_header)):
     if api_key != API_KEY:
@@ -82,30 +144,98 @@ def get_api_key(api_key: str = Security(api_key_header)):
     return api_key
 
 
+# ── Startup event: seed default admin ────────────────────────────────────────
+@app.on_event("startup")
+def startup_event():
+    db = SessionLocal()
+    try:
+        ensure_default_admin(db)
+    finally:
+        db.close()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# POST /ingest  ← This is what collector.py calls
+# AGENT ENDPOINTS (protected by X-API-Key)
 # ─────────────────────────────────────────────────────────────────────────────
+
 @app.post("/ingest", response_model=ScanResponse)
-def ingest(req: IngestRequest, request: Request, db: Session = Depends(get_db), api_key: str = Security(get_api_key)):
+async def ingest(
+    req: IngestRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    api_key: str = Security(get_api_key),
+):
     """
-    Receives the telemetry payload from collector.py, scores the machine,
-    persists it to the database, and returns the risk result.
+    Receives telemetry payload from collector.py, scores the machine,
+    runs anomaly detection, persists to DB, and broadcasts to live
+    dashboard via WebSocket.
     """
-    # Prefer IP sent in payload; fall back to the HTTP client's address
     ip = req.ip or request.client.host or "unknown"
 
-    # Score the machine
-    risk_score, risk_class, flagged = score(req.data)
+    # Get previous score for trend arrow BEFORE upserting
+    prev_score = crud.get_previous_score(db, req.host_id)
 
-    # Upsert machine registry + insert scan row
+    # Score the machine (now returns MITRE hits too)
+    risk_score, risk_class, flagged, mitre_hits = score(req.data)
+
+    # Run anomaly detection
+    anomaly_result = detect_anomaly(db, req.host_id, risk_score)
+
+    # Upsert machine registry + insert scan row (with anomaly data)
     machine = crud.upsert_machine(db, req, ip, risk_score, risk_class)
-    crud.create_scan(db, req, machine.id, ip, risk_score, risk_class, flagged)
+    crud.create_scan(
+        db, req, machine.id, ip, risk_score, risk_class, flagged, prev_score,
+        is_anomaly=anomaly_result.is_anomaly,
+        anomaly_z_score=anomaly_result.z_score,
+    )
+
+    # Update anomaly streak on machine
+    crud.update_anomaly_streak(db, req.host_id, anomaly_result.is_anomaly)
     db.commit()
 
+    anomaly_flag = " ⚠ ANOMALY" if anomaly_result.is_anomaly else ""
     print(
-        f"[INGEST] {req.host_id} ({ip}) -> "
-        f"score={risk_score} class={risk_class} flagged={flagged}"
+        f"[INGEST] {req.host_id} ({ip}) → "
+        f"score={risk_score} class={risk_class} "
+        f"z={anomaly_result.z_score}{anomaly_flag} "
+        f"trend={'▲' if prev_score and risk_score > prev_score else '▼' if prev_score and risk_score < prev_score else '='}"
     )
+
+    # Broadcast to WebSocket dashboard clients
+    trend = None
+    if prev_score is not None:
+        if risk_score > prev_score:
+            trend = "up"
+        elif risk_score < prev_score:
+            trend = "down"
+        else:
+            trend = "stable"
+
+    anomaly_data = None
+    if anomaly_result.z_score is not None:
+        anomaly_data = {
+            "is_anomaly":    anomaly_result.is_anomaly,
+            "z_score":       anomaly_result.z_score,
+            "rolling_mean":  anomaly_result.rolling_mean,
+            "rolling_std":   anomaly_result.rolling_std,
+            "direction":     anomaly_result.direction,
+            "scans_analyzed": anomaly_result.scans_analyzed,
+        }
+
+    await manager.broadcast({
+        "event": "scan",
+        "hostname": req.host_id,
+        "ip": ip,
+        "os": req.os,
+        "risk_score": risk_score,
+        "risk_class": risk_class,
+        "prev_risk_score": prev_score,
+        "trend": trend,
+        "flagged": flagged,
+        "mitre_hits": mitre_hits,
+        "anomaly": anomaly_data,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
 
     return ScanResponse(
         message=f"Scan recorded. Risk class: {risk_class}",
@@ -113,39 +243,355 @@ def ingest(req: IngestRequest, request: Request, db: Session = Depends(get_db), 
         risk_score=risk_score,
         risk_class=risk_class,
         flagged=flagged,
+        mitre_hits=mitre_hits,
+        anomaly=anomaly_data,
     )
 
 
+@app.get("/commands/{hostname}", response_model=list[CommandOut])
+def agent_poll_commands(
+    hostname: str,
+    db: Session = Depends(get_db),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Agent polls this endpoint every 60 seconds to check for pending fix commands.
+    Returns list of pending commands. Marks them as 'executing' immediately.
+    """
+    pending = crud.get_pending_commands(db, hostname)
+    for cmd in pending:
+        crud.mark_executing(db, cmd.id)
+    db.commit()
+    return pending
+
+
+@app.post("/commands/{hostname}/{cmd_id}/ack")
+def agent_ack_command(
+    hostname: str,
+    cmd_id: int,
+    ack: CommandAck,
+    db: Session = Depends(get_db),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Agent reports success or failure of a remediation command.
+    Status must be 'done' or 'failed'.
+    """
+    if ack.status not in ("done", "failed"):
+        raise HTTPException(status_code=400, detail="Status must be 'done' or 'failed'")
+
+    cmd = crud.ack_command(db, cmd_id, ack.status, ack.output)
+    if not cmd:
+        raise HTTPException(status_code=404, detail="Command not found")
+
+    db.commit()
+    print(f"[ACK] {hostname} cmd={cmd_id} status={ack.status} output={ack.output[:100] if ack.output else ''}")
+    return {"message": f"Command {cmd_id} acknowledged as {ack.status}"}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# GET /machines  — list all registered machines
+# ADMIN AUTH ENDPOINTS
 # ─────────────────────────────────────────────────────────────────────────────
+
+@app.post("/admin/login", response_model=TokenOut)
+def admin_login(login: AdminLogin, db: Session = Depends(get_db)):
+    """Admin username + password → JWT access token."""
+    admin = db.query(models.AdminUser).filter_by(username=login.username).first()
+    if not admin or not verify_password(login.password, admin.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+        )
+    if not admin.is_active:
+        raise HTTPException(status_code=403, detail="Admin account is disabled")
+
+    # Update last login
+    admin.last_login = datetime.now(timezone.utc)
+    db.commit()
+
+    token = create_access_token({"sub": admin.username})
+    return TokenOut(access_token=token, token_type="bearer", username=admin.username)
+
+
+@app.get("/admin/me", response_model=AdminOut)
+def admin_me(current_admin: models.AdminUser = Depends(get_current_admin)):
+    """Returns the currently authenticated admin's info."""
+    return current_admin
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADMIN DASHBOARD ENDPOINTS (protected by JWT Bearer token)
+# ─────────────────────────────────────────────────────────────────────────────
+
 @app.get("/machines", response_model=list[MachineOut])
-def list_machines(db: Session = Depends(get_db), api_key: str = Security(get_api_key)):
+def list_machines(
+    db: Session = Depends(get_db),
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    """List all registered machines, sorted by risk score descending."""
     return crud.get_all_machines(db)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# GET /machines/{hostname}  — single machine detail
-# ─────────────────────────────────────────────────────────────────────────────
 @app.get("/machines/{hostname}", response_model=MachineOut)
-def get_machine(hostname: str, db: Session = Depends(get_db), api_key: str = Security(get_api_key)):
+def get_machine(
+    hostname: str,
+    db: Session = Depends(get_db),
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
     machine = crud.get_machine(db, hostname)
     if not machine:
         raise HTTPException(status_code=404, detail="Machine not found")
     return machine
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# GET /machines/{hostname}/scans  — scan history
-# ─────────────────────────────────────────────────────────────────────────────
 @app.get("/machines/{hostname}/scans", response_model=list[ScanOut])
-def get_scans(hostname: str, limit: int = 20, db: Session = Depends(get_db), api_key: str = Security(get_api_key)):
+def get_scans(
+    hostname: str,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
     return crud.get_scans(db, hostname, limit)
 
 
+@app.get("/machines/{hostname}/detail")
+def get_machine_detail(
+    hostname: str,
+    db: Session = Depends(get_db),
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    """
+    Returns rich detail for the admin dashboard machine panel:
+    - Machine registry info
+    - Last scan reconstructed flagged dict (grouped by kill-chain phase)
+    - MITRE ATT&CK technique hits for flagged parameters
+    - Anomaly detection data
+    - Trend vs previous scan
+    - Pending command count
+    """
+    from scoring import PHASES, PARAM_WEIGHTS, MITRE_MAPPING
+    import json as _json
+
+    machine = crud.get_machine(db, hostname)
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine not found")
+
+    # Last two scans for trend
+    scans = crud.get_scans(db, hostname, limit=2)
+    last_scan = scans[0] if scans else None
+    prev_scan  = scans[1] if len(scans) > 1 else None
+
+    # Reconstruct flagged dict from comma-separated stored string
+    flagged: dict[str, list[str]] = {}
+    if last_scan and last_scan.flagged_parameters:
+        raw_params = [p.strip() for p in last_scan.flagged_parameters.split(",") if p.strip()]
+        for param in raw_params:
+            for phase, phase_params in PHASES.items():
+                if param in phase_params:
+                    flagged.setdefault(phase, []).append(param)
+                    break
+
+    # Generate MITRE hits from flagged params
+    mitre_hits = get_mitre_hits(flagged)
+
+    # Trend
+    trend = None
+    if last_scan and prev_scan:
+        if last_scan.risk_score > prev_scan.risk_score:
+            trend = "up"
+        elif last_scan.risk_score < prev_scan.risk_score:
+            trend = "down"
+        else:
+            trend = "stable"
+
+    # Anomaly data from last scan
+    anomaly_data = None
+    if last_scan and last_scan.anomaly_z_score is not None:
+        anomaly_data = {
+            "is_anomaly": last_scan.is_anomaly,
+            "z_score":    last_scan.anomaly_z_score,
+        }
+
+    # Recent score history for timeline chart (last 20 scans, oldest first)
+    recent_scans = crud.get_scans(db, hostname, limit=20)
+    score_history = [
+        {
+            "score": s.risk_score,
+            "risk_class": s.risk_class,
+            "is_anomaly": s.is_anomaly or False,
+            "scanned_at": s.scanned_at.isoformat() if s.scanned_at else None,
+        }
+        for s in reversed(recent_scans)  # oldest first for chart
+    ]
+
+    # Pending commands
+    pending_cmds = crud.get_pending_commands(db, hostname)
+
+    return {
+        "hostname": machine.hostname,
+        "ip_address": machine.ip_address,
+        "os_version": machine.os_version,
+        "first_seen": machine.first_seen,
+        "last_seen": machine.last_seen,
+        "risk_score": last_scan.risk_score if last_scan else 0,
+        "risk_class": last_scan.risk_class if last_scan else machine.last_risk_class,
+        "prev_risk_score": prev_scan.risk_score if prev_scan else None,
+        "trend": trend,
+        "flagged": flagged,
+        "mitre_hits": mitre_hits,
+        "anomaly": anomaly_data,
+        "anomaly_streak": machine.anomaly_streak or 0,
+        "score_history": score_history,
+        "scanned_at": last_scan.scanned_at if last_scan else None,
+        "pending_commands": len(pending_cmds),
+    }
+
+
+@app.post("/commands/{hostname}", response_model=CommandHistoryOut)
+def admin_issue_command(
+    hostname: str,
+    body: IssueCommand,
+    db: Session = Depends(get_db),
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    """
+    Admin queues a remediation command for a specific agent.
+    Rejects if the same command is already pending/executing (deduplication).
+    """
+    # Validate command key exists in allowlist
+    if not get_command(body.command_key):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown command key '{body.command_key}'. Check /remediation/available.",
+        )
+
+    # Machine must exist
+    machine = crud.get_machine(db, hostname)
+    if not machine:
+        raise HTTPException(status_code=404, detail=f"Machine '{hostname}' not found")
+
+    # Deduplication: block if already pending/executing
+    if crud.has_pending_or_executing(db, hostname, body.command_key):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Command '{body.command_key}' is already pending or executing on {hostname}",
+        )
+
+    cmd = crud.queue_command(db, hostname, body.command_key, issued_by=current_admin.username)
+    db.commit()
+
+    print(f"[CMD] Admin '{current_admin.username}' queued '{body.command_key}' → {hostname}")
+    return cmd
+
+
+@app.get("/commands/{hostname}/history", response_model=list[CommandHistoryOut])
+def get_command_history(
+    hostname: str,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    """Return the full remediation command history for a machine."""
+    return crud.get_command_history(db, hostname, limit)
+
+
+@app.get("/remediation/available", response_model=list[RemediationCommandDef])
+def list_available_remediations(
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    """Return all available remediation commands from the allowlist."""
+    cmds = get_all_commands()
+    return [
+        RemediationCommandDef(
+            key=k,
+            label=v["label"],
+            description=v["description"],
+            phase=v["phase"],
+            severity=v["severity"],
+            param_key=v["param_key"],
+            reboot_required=v.get("reboot_required", False),
+        )
+        for k, v in cmds.items()
+    ]
+
+
+@app.get("/mitre/mapping")
+def get_mitre_mapping_endpoint(
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    """Return the full MITRE ATT&CK mapping table."""
+    return get_mitre_mapping()
+
+
+@app.get("/machines/{hostname}/anomalies")
+def get_anomaly_history(
+    hostname: str,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    """Return scans flagged as anomalies for this machine."""
+    anomaly_scans = crud.get_anomaly_scans(db, hostname, limit)
+    return [
+        {
+            "id": s.id,
+            "risk_score": s.risk_score,
+            "risk_class": s.risk_class,
+            "z_score": s.anomaly_z_score,
+            "scanned_at": s.scanned_at,
+        }
+        for s in anomaly_scans
+    ]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# GET /health  — quick liveness check
+# WEBSOCKET — Real-time dashboard feed
 # ─────────────────────────────────────────────────────────────────────────────
+
+@app.websocket("/ws/live")
+async def websocket_live(websocket: WebSocket):
+    """
+    Dashboard connects here to receive real-time scan events.
+    No auth on the WebSocket itself — dashboard must validate the JWT
+    before connecting (sent as a query param: /ws/live?token=<jwt>).
+    """
+    token = websocket.query_params.get("token", "")
+    from auth import decode_token
+    payload = decode_token(token)
+    if not payload:
+        await websocket.close(code=4001)
+        return
+
+    await manager.connect(websocket)
+    try:
+        # Send a welcome event with current machine count
+        db = SessionLocal()
+        try:
+            machines = crud.get_all_machines(db)
+            await websocket.send_text(json.dumps({
+                "event": "connected",
+                "machine_count": len(machines),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }))
+        finally:
+            db.close()
+
+        # Keep connection alive; client just listens for broadcasts
+        while True:
+            await asyncio.sleep(30)
+            await websocket.send_text(json.dumps({"event": "ping"}))
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HEALTH
+# ─────────────────────────────────────────────────────────────────────────────
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "R3P Backend"}
+    return {
+        "status": "ok",
+        "service": "R3P Backend v2",
+        "ws_clients": len(manager.active),
+    }

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, Text
 from sqlalchemy.sql import func
 from database import Base
 
@@ -18,6 +18,7 @@ class MachineRegistry(Base):
     last_seen = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
     last_risk_score = Column(Float, default=0.0)
     last_risk_class = Column(String, default="UNKNOWN")
+    anomaly_streak = Column(Integer, default=0)              # Consecutive anomaly count
 
 
 class ConfigurationScan(Base):
@@ -66,3 +67,40 @@ class ConfigurationScan(Base):
     risk_score = Column(Float, default=0.0)
     risk_class = Column(String, default="SAFE")              # SAFE | LOW RISK | HIGH RISK | CRITICAL
     flagged_parameters = Column(String, default="")          # Comma-separated list of flagged params
+    is_anomaly = Column(Boolean, default=False)              # Z-score anomaly flag
+    anomaly_z_score = Column(Float, nullable=True)           # Z-score value at scan time
+    prev_risk_score = Column(Float, nullable=True)           # Previous scan score (for trend arrow)
+
+
+class RemediationCommand(Base):
+    """
+    Tracks admin-issued remediation commands and their execution status.
+    One row per command issued. The agent polls for 'pending' rows and
+    updates status to 'executing' → 'done' | 'failed' via ACK endpoint.
+    """
+    __tablename__ = "remediation_commands"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    hostname     = Column(String, nullable=False, index=True)
+    command_key  = Column(String, nullable=False)         # Must exist in remediation_registry
+    status       = Column(String, default="pending")      # pending|executing|done|failed
+    issued_at    = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    output       = Column(Text, nullable=True)            # stdout/stderr from agent
+    issued_by    = Column(String, default="admin")        # Admin username who issued command
+    reboot_required = Column(Boolean, default=False)      # Whether fix needs reboot
+
+
+class AdminUser(Base):
+    """
+    Admin users for the dashboard login page.
+    Credentials are stored as PBKDF2-hashed passwords.
+    """
+    __tablename__ = "admin_users"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    username        = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    is_active       = Column(Boolean, default=True)
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+    last_login      = Column(DateTime(timezone=True), nullable=True)

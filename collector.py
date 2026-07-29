@@ -1,6 +1,13 @@
 """
 R3P Agent — Ransomware Readiness & Risk Profiler
-Standalone collector with Tkinter GUI.
+Continuous monitoring edition (v2).
+
+Changes from v1:
+  • 60-second continuous scan loop — collects and sends simultaneously
+  • Command polling: after each scan, checks for admin-issued remediation commands
+  • Remediation executor: runs allowlisted PowerShell fixes and ACKs the server
+  • Windows auto-start: registers itself in HKCU Run key on first run
+  • Updated GUI: countdown timer, live score badge, command status label
 
 Package as a single .exe (no Python needed on target machine):
     pyinstaller --onefile --windowed --uac-admin --name R3P_Agent collector.py
@@ -16,6 +23,7 @@ import json
 import sys
 import os
 import threading
+import time
 from datetime import datetime
 import tkinter as tk
 from tkinter import ttk
@@ -36,12 +44,11 @@ except ImportError:
 # ── CONSTANTS ──────────────────────────────────────────────────────────────────
 SERVER_PORT = 8000
 
-# Config file lives next to the .exe (or the .py during dev)
 _BASE = os.path.dirname(
     sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
 )
-CONFIG_FILE = os.path.join(_BASE, "r3p_server.txt")
-AGENT_CONFIG_FILE = os.path.join(_BASE, "agent_config.json")
+CONFIG_FILE        = os.path.join(_BASE, "r3p_server.txt")
+AGENT_CONFIG_FILE  = os.path.join(_BASE, "agent_config.json")
 
 COLORS = {
     "bg":       "#0d1117",
@@ -55,6 +62,7 @@ COLORS = {
     "high":     "#f85149",
     "critical": "#da3633",
     "warning":  "#e3b341",
+    "info":     "#58a6ff",
 }
 
 RISK_COLORS = {
@@ -64,7 +72,65 @@ RISK_COLORS = {
     "CRITICAL":  COLORS["critical"],
 }
 
-# ── SERVER CONFIG PERSISTENCE ─────────────────────────────────────────────────
+# ── REMEDIATION ALLOWLIST (must mirror backend/remediation_registry.py) ───────
+# SECURITY: Only keys cross the network. PowerShell lives here, locally.
+AGENT_REMEDIATION = {
+    "disable_smb1": (
+        "Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force; "
+        "Write-Output 'SMBv1 disabled successfully.'"
+    ),
+    "block_rdp": (
+        "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' "
+        "-Name 'fDenyTSConnections' -Value 1; "
+        "Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue; "
+        "Write-Output 'RDP disabled.'"
+    ),
+    "disable_autorun": (
+        "$path = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; "
+        "If (!(Test-Path $path)) { New-Item -Path $path -Force }; "
+        "Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord; "
+        "Write-Output 'AutoRun disabled.'"
+    ),
+    "restrict_powershell": (
+        "Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force; "
+        "Write-Output 'PowerShell execution policy set to RemoteSigned.'"
+    ),
+    "enable_uac": (
+        "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' "
+        "-Name 'EnableLUA' -Value 1; "
+        "Write-Output 'UAC enabled.'"
+    ),
+    "enable_defender": (
+        "Set-MpPreference -DisableRealtimeMonitoring $false; "
+        "Start-Service -Name WinDefend -ErrorAction SilentlyContinue; "
+        "Write-Output 'Windows Defender enabled.'"
+    ),
+    "enable_firewall": (
+        "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True; "
+        "Write-Output 'Windows Firewall enabled.'"
+    ),
+    "enable_tamper_protection": (
+        "Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue; "
+        "Write-Output 'Tamper Protection set.'"
+    ),
+    "enable_event_log": (
+        "Set-Service -Name 'eventlog' -StartupType Automatic; "
+        "Start-Service -Name 'eventlog'; "
+        "Write-Output 'Event Log service started.'"
+    ),
+    "disable_guest": (
+        "Disable-LocalUser -Name 'Guest' -ErrorAction SilentlyContinue; "
+        "Write-Output 'Guest account disabled.'"
+    ),
+    "enable_lsass_protection": (
+        "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa' "
+        "-Name 'RunAsPPL' -Value 1 -Type DWord; "
+        "Write-Output 'LSASS PPL protection enabled.'"
+    ),
+}
+
+
+# ── CONFIG PERSISTENCE ────────────────────────────────────────────────────────
 def load_server_ip():
     try:
         if os.path.exists(CONFIG_FILE):
@@ -73,16 +139,6 @@ def load_server_ip():
     except Exception:
         pass
     return None
-
-def load_api_key():
-    try:
-        if os.path.exists(AGENT_CONFIG_FILE):
-            with open(AGENT_CONFIG_FILE, "r") as f:
-                config = json.load(f)
-                return config.get("api_key", "")
-    except Exception:
-        pass
-    return ""
 
 
 def save_server_ip(ip: str):
@@ -93,26 +149,58 @@ def save_server_ip(ip: str):
         pass
 
 
+def load_agent_config() -> dict:
+    defaults = {
+        "api_key": "R3P-DEMO-KEY",
+        "scan_interval_seconds": 60,
+        "command_poll_enabled": True,
+        "auto_start_enabled": True,
+    }
+    try:
+        if os.path.exists(AGENT_CONFIG_FILE):
+            with open(AGENT_CONFIG_FILE, "r") as f:
+                data = json.load(f)
+                defaults.update(data)
+    except Exception:
+        pass
+    return defaults
+
+
 def build_api_url(server_input: str) -> str:
-    """
-    Build the full /ingest URL from whatever the user typed:
-      - Plain IP:          192.168.1.105   → http://192.168.1.105:8000/ingest
-      - IP + port:         192.168.1.105:8000 → http://192.168.1.105:8000/ingest
-      - ngrok URL:         abc123.ngrok.io → https://abc123.ngrok.io/ingest
-      - Full https URL:    https://abc.ngrok.io → https://abc.ngrok.io/ingest
-    """
     s = server_input.strip().rstrip("/")
-    # Already a full URL?
     if s.startswith("http://") or s.startswith("https://"):
-        return s.rstrip("/") + "/ingest"
-    # Contains a domain-like dot but no port → likely ngrok or hostname
+        return s.rstrip("/")
     if "." in s and ":" not in s and not s.replace(".", "").isdigit():
-        return f"https://{s}/ingest"
-    # Plain IP (with or without port)
+        return f"https://{s}"
     if ":" not in s:
-        return f"http://{s}:{SERVER_PORT}/ingest"
-    # IP:port already included
-    return f"http://{s}/ingest"
+        return f"http://{s}:{SERVER_PORT}"
+    return f"http://{s}"
+
+
+# ── WINDOWS AUTO-START ────────────────────────────────────────────────────────
+def register_auto_start():
+    """
+    Register this executable in HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run
+    so R3P Agent runs automatically on Windows login.
+    Only registers if running as a frozen .exe and auto_start_enabled = True.
+    """
+    if not getattr(sys, "frozen", False):
+        return  # Don't register during development (only .exe)
+    config = load_agent_config()
+    if not config.get("auto_start_enabled", True):
+        return
+    try:
+        exe_path = sys.executable
+        reg_key = (
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
+        )
+        subprocess.run(
+            ["reg", "add", reg_key, "/v", "R3P_Agent", "/t", "REG_SZ",
+             "/d", f'"{exe_path}"', "/f"],
+            capture_output=True, check=False
+        )
+    except Exception:
+        pass
 
 
 # ── POWERSHELL HELPER ──────────────────────────────────────────────────────────
@@ -147,7 +235,6 @@ def get_local_ip() -> str:
 
 
 def check_rdp_open() -> bool:
-    """True = RDP port 3389 is open (risky)."""
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(1)
     result = s.connect_ex(("127.0.0.1", 3389))
@@ -156,10 +243,7 @@ def check_rdp_open() -> bool:
 
 
 def check_firewall_on() -> bool:
-    """True = all firewall profiles are ON (safe)."""
-    out = _ps(
-        "(Get-NetFirewallProfile | Where-Object { $_.Enabled -eq $false }).Count"
-    )
+    out = _ps("(Get-NetFirewallProfile | Where-Object { $_.Enabled -eq $false }).Count")
     try:
         return int(out) == 0
     except Exception:
@@ -168,29 +252,21 @@ def check_firewall_on() -> bool:
 
 
 def check_smb_v1() -> bool:
-    """True = SMBv1 is enabled (risky — WannaCry vector)."""
     out = _ps("(Get-SmbServerConfiguration).EnableSMB1Protocol")
     return out.lower() == "true"
 
 
 def check_defender_disabled() -> bool:
-    """True = Windows Defender real-time protection is OFF (risky)."""
-    out = _ps(
-        "(Get-MpComputerStatus -ErrorAction SilentlyContinue).RealTimeProtectionEnabled"
-    )
+    out = _ps("(Get-MpComputerStatus -ErrorAction SilentlyContinue).RealTimeProtectionEnabled")
     return out.lower() != "true"
 
 
 def check_tamper_protection_off() -> bool:
-    """True = Defender Tamper Protection is OFF (risky)."""
-    out = _ps(
-        "(Get-MpComputerStatus -ErrorAction SilentlyContinue).IsTamperProtected"
-    )
+    out = _ps("(Get-MpComputerStatus -ErrorAction SilentlyContinue).IsTamperProtected")
     return out.lower() != "true"
 
 
 def check_uac_disabled() -> bool:
-    """True = UAC is disabled (risky)."""
     out = _ps(
         r"(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"
         r"\Policies\System' -ErrorAction SilentlyContinue).EnableLUA"
@@ -199,13 +275,11 @@ def check_uac_disabled() -> bool:
 
 
 def check_powershell_unrestricted() -> bool:
-    """True = PowerShell execution policy is Unrestricted or Bypass (risky)."""
     out = _ps("Get-ExecutionPolicy").lower()
     return out in ("unrestricted", "bypass")
 
 
 def check_autorun_enabled() -> bool:
-    """True = USB AutoRun is enabled (risky)."""
     out = _ps(
         r"(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"
         r"\Policies\Explorer' -ErrorAction SilentlyContinue).NoDriveTypeAutoRun"
@@ -217,15 +291,11 @@ def check_autorun_enabled() -> bool:
 
 
 def check_guest_account() -> bool:
-    """True = Guest account is enabled (risky)."""
-    out = _ps(
-        "(Get-LocalUser -Name 'Guest' -ErrorAction SilentlyContinue).Enabled"
-    )
+    out = _ps("(Get-LocalUser -Name 'Guest' -ErrorAction SilentlyContinue).Enabled")
     return out.lower() == "true"
 
 
 def check_lsass_protection_off() -> bool:
-    """True = LSASS is not running as PPL (risky — credential dump vector)."""
     out = _ps(
         r"(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'"
         r" -ErrorAction SilentlyContinue).RunAsPPL"
@@ -234,7 +304,6 @@ def check_lsass_protection_off() -> bool:
 
 
 def check_admin_shares() -> bool:
-    """True = default admin shares (C$, ADMIN$) are present (risky)."""
     out = _ps(
         "(Get-SmbShare -ErrorAction SilentlyContinue"
         r" | Where-Object { $_.Name -match 'ADMIN\$|C\$' }).Count"
@@ -246,13 +315,11 @@ def check_admin_shares() -> bool:
 
 
 def check_event_logging_disabled() -> bool:
-    """True = Windows Event Log service is NOT running (risky)."""
     out = _ps("(Get-Service -Name 'eventlog').Status")
     return out.lower() != "running"
 
 
 def check_vss_deleted() -> bool:
-    """True = no Volume Shadow Copies exist (risky — no recovery)."""
     out = _ps(
         "(Get-WmiObject Win32_ShadowCopy -ErrorAction SilentlyContinue"
         " | Measure-Object).Count"
@@ -264,15 +331,11 @@ def check_vss_deleted() -> bool:
 
 
 def check_backup_configured() -> bool:
-    """True = Windows Backup service is running (safe)."""
-    out = _ps(
-        "(Get-Service -Name 'SDRSVC' -ErrorAction SilentlyContinue).Status"
-    )
+    out = _ps("(Get-Service -Name 'SDRSVC' -ErrorAction SilentlyContinue).Status")
     return out.lower() == "running"
 
 
 def check_bitlocker_off() -> bool:
-    """True = C: drive is NOT fully encrypted (risky)."""
     out = _ps(
         "(Get-BitLockerVolume -MountPoint 'C:' -ErrorAction SilentlyContinue)"
         ".VolumeStatus"
@@ -281,7 +344,6 @@ def check_bitlocker_off() -> bool:
 
 
 def check_open_network_shares() -> bool:
-    """True = network shares are accessible to 'Everyone' (risky)."""
     out = _ps(
         "Get-SmbShare -ErrorAction SilentlyContinue"
         " | ForEach-Object { Get-SmbShareAccess $_.Name -ErrorAction SilentlyContinue }"
@@ -295,9 +357,6 @@ def check_open_network_shares() -> bool:
 
 
 def check_macro_execution_enabled() -> bool:
-    """True = Office macros are enabled without notification (risky)."""
-    # VBAWarnings=1 means macros enabled; 2=with notification; 3=signed only; 4=disabled
-    # Check for Word, Excel, PowerPoint across common Office versions
     ps_cmd = (
         "$officeVersions = @('16.0','15.0','14.0');"
         "$apps = @('Word','Excel','PowerPoint');"
@@ -316,12 +375,9 @@ def check_macro_execution_enabled() -> bool:
 
 
 def check_applocker_absent() -> bool:
-    """True = AppLocker has no active rules configured (risky)."""
-    # Check if AppLocker service (AppIDSvc) is running AND has rules
     svc = _ps("(Get-Service -Name 'AppIDSvc' -ErrorAction SilentlyContinue).Status")
     if svc.lower() != "running":
-        return True  # service not running = AppLocker not enforced
-    # Check for any enforced rule collections
+        return True
     out = _ps(
         "(Get-AppLockerPolicy -Effective -ErrorAction SilentlyContinue)"
         ".RuleCollections.Count"
@@ -329,35 +385,26 @@ def check_applocker_absent() -> bool:
     try:
         return int(out.strip()) == 0
     except Exception:
-        return True  # if we can't read, assume absent
+        return True
 
 
 # ── CHECK MANIFEST ─────────────────────────────────────────────────────────────
 CHECKS = [
-    # ── Entry Vector (30 pts) ──────────────────────────────────────────────────
     ("rdp_open",                 "Checking RDP port 3389...",              check_rdp_open),
     ("smb_v1_enabled",           "Checking SMBv1 protocol...",             check_smb_v1),
     ("autorun_enabled",          "Checking AutoRun settings...",           check_autorun_enabled),
     ("open_network_shares",      "Checking open network shares...",        check_open_network_shares),
-
-    # ── Execution (25 pts) ────────────────────────────────────────────────────
     ("macro_execution_enabled",  "Checking Office macro settings...",      check_macro_execution_enabled),
     ("powershell_unrestricted",  "Checking PowerShell policy...",          check_powershell_unrestricted),
     ("uac_disabled",             "Checking UAC (User Account Control)...", check_uac_disabled),
     ("applocker_absent",         "Checking AppLocker policy...",           check_applocker_absent),
-
-    # ── Evasion / Persistence (20 pts) ───────────────────────────────────────
     ("defender_disabled",        "Checking Windows Defender...",           check_defender_disabled),
-    ("firewall_on",              "Checking Windows Firewall...",            check_firewall_on),
+    ("firewall_on",              "Checking Windows Firewall...",           check_firewall_on),
     ("tamper_protection_off",    "Checking Tamper Protection...",          check_tamper_protection_off),
     ("event_logging_disabled",   "Checking Event Log service...",          check_event_logging_disabled),
-
-    # ── Lateral Movement (15 pts) ────────────────────────────────────────────
     ("admin_shares_enabled",     "Checking default admin shares...",       check_admin_shares),
     ("lsass_protection_off",     "Checking LSASS protection...",           check_lsass_protection_off),
     ("guest_account_active",     "Checking Guest account status...",       check_guest_account),
-
-    # ── Recovery Prevention (10 pts) ─────────────────────────────────────────
     ("vss_deleted",              "Checking Volume Shadow Copies...",       check_vss_deleted),
     ("backup_configured",        "Checking backup service...",             check_backup_configured),
     ("bitlocker_off",            "Checking BitLocker encryption...",       check_bitlocker_off),
@@ -376,9 +423,37 @@ def run_all_checks(status_cb=None) -> dict:
     return results
 
 
+# ── REMEDIATION EXECUTOR ──────────────────────────────────────────────────────
+def execute_remediation(cmd_key: str) -> tuple[bool, str]:
+    """
+    Look up the PowerShell command from the LOCAL allowlist and execute it.
+    Returns (success: bool, output: str).
+    NEVER executes a command key not present in AGENT_REMEDIATION.
+    """
+    ps_cmd = AGENT_REMEDIATION.get(cmd_key)
+    if ps_cmd is None:
+        return False, f"REJECTED: Unknown command key '{cmd_key}' not in local allowlist."
+
+    try:
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive",
+             "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+            capture_output=True, text=True, timeout=30,
+            creationflags=flags,
+        )
+        output = (r.stdout + r.stderr).strip()
+        success = r.returncode == 0
+        return success, output or ("Success" if success else "No output")
+    except subprocess.TimeoutExpired:
+        return False, "FAILED: PowerShell command timed out after 30 seconds."
+    except Exception as e:
+        return False, f"FAILED: {e}"
+
+
 # ── GUI: SERVER IP SETUP DIALOG ───────────────────────────────────────────────
 class SetupDialog(tk.Tk):
-    """Shown only on first run — asks for server IP and saves it."""
+    """Shown only on first run — asks for server IP."""
 
     def __init__(self):
         super().__init__()
@@ -432,7 +507,7 @@ class SetupDialog(tk.Tk):
         entry.focus_set()
         entry.bind("<Return>", lambda _: self._submit())
 
-        tk.Button(body, text="Connect & Scan  →",
+        tk.Button(body, text="Connect & Start Monitoring  →",
                   font=("Segoe UI", 10, "bold"),
                   bg=COLORS["accent"], fg="white",
                   activebackground="#7c73ff", activeforeground="white",
@@ -448,20 +523,38 @@ class SetupDialog(tk.Tk):
         self.destroy()
 
 
-# ── GUI: MAIN SCANNER WINDOW ──────────────────────────────────────────────────
-class ScannerApp(tk.Tk):
+# ── GUI: MAIN MONITOR WINDOW ──────────────────────────────────────────────────
+class MonitorApp(tk.Tk):
 
     def __init__(self, server_ip: str):
         super().__init__()
-        self.server_ip = server_ip
-        self.api_url = build_api_url(server_ip)
-        self.title("R3P — Ransomware Readiness Scanner")
+        self.server_ip      = server_ip
+        self.base_url       = build_api_url(server_ip)
+        self.config_data    = load_agent_config()
+        self.scan_interval  = int(self.config_data.get("scan_interval_seconds", 60))
+        self.api_key        = self.config_data.get("api_key", "R3P-DEMO-KEY")
+        self.cmd_poll_on    = self.config_data.get("command_poll_enabled", True)
+
+        self._stop_event    = threading.Event()
+        self._last_result   = None
+        self._next_scan_at  = None
+        self._cmd_label_text = tk.StringVar(value="")
+
+        self.title("R3P — Continuous Security Monitor")
         self.configure(bg=COLORS["bg"])
         self.resizable(False, False)
-        self._center(500, 480)
-        self._build_scanning_ui()
-        self.after(400, lambda: threading.Thread(
-            target=self._scan_worker, daemon=True).start())
+        self._center(520, 560)
+        self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Start the continuous monitoring loop
+        self._monitor_thread = threading.Thread(
+            target=self._monitor_loop, daemon=True
+        )
+        self._monitor_thread.start()
+
+        # Start the countdown ticker (runs on main thread via `after`)
+        self._tick_countdown()
 
     def _center(self, w, h):
         self.update_idletasks()
@@ -469,71 +562,159 @@ class ScannerApp(tk.Tk):
         y = (self.winfo_screenheight() - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
 
-    # ── scanning layout ─────────────────────────────────────────────────────
-    def _build_scanning_ui(self):
+    # ── UI Layout ─────────────────────────────────────────────────────────
+    def _build_ui(self):
         tk.Frame(self, bg=COLORS["accent"], height=4).pack(fill="x")
 
-        hdr = tk.Frame(self, bg=COLORS["bg"], pady=18)
-        hdr.pack(fill="x", padx=30)
-        tk.Label(hdr, text="🛡  R3P Scanner",
+        # Header
+        hdr = tk.Frame(self, bg=COLORS["bg"], pady=14)
+        hdr.pack(fill="x", padx=26)
+        tk.Label(hdr, text="🛡  R3P Monitor",
                  font=("Segoe UI", 17, "bold"),
                  bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w")
-        tk.Label(hdr, text="Ransomware Readiness & Risk Profiler",
+        tk.Label(hdr, text="Continuous Ransomware Readiness Monitoring",
                  font=("Segoe UI", 9), bg=COLORS["bg"], fg=COLORS["subtle"]).pack(anchor="w")
 
-        self.scan_card = tk.Frame(self, bg=COLORS["card"],
-                                  highlightthickness=1,
-                                  highlightbackground=COLORS["border"])
-        self.scan_card.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        # Status card
+        self.status_card = tk.Frame(self, bg=COLORS["card"],
+                                    highlightthickness=1,
+                                    highlightbackground=COLORS["border"])
+        self.status_card.pack(fill="x", padx=20, pady=(0, 6))
+        inner_s = tk.Frame(self.status_card, bg=COLORS["card"], padx=22, pady=16)
+        inner_s.pack(fill="x")
 
-        inner = tk.Frame(self.scan_card, bg=COLORS["card"], padx=28, pady=28)
-        inner.pack(fill="both", expand=True)
+        # Live indicator dot
+        dot_row = tk.Frame(inner_s, bg=COLORS["card"])
+        dot_row.pack(anchor="w")
+        self.dot_canvas = tk.Canvas(dot_row, bg=COLORS["card"], width=12, height=12,
+                                    highlightthickness=0)
+        self.dot_canvas.pack(side="left", padx=(0, 6))
+        self._dot = self.dot_canvas.create_oval(2, 2, 10, 10, fill=COLORS["subtle"], outline="")
+        self.monitor_label = tk.Label(dot_row, text="Initializing…",
+                                      font=("Segoe UI", 10, "bold"),
+                                      bg=COLORS["card"], fg=COLORS["text"])
+        self.monitor_label.pack(side="left")
 
-        tk.Label(inner, text="Scanning your system…",
-                 font=("Segoe UI", 11, "bold"),
-                 bg=COLORS["card"], fg=COLORS["text"]).pack(anchor="w")
-
-        self.status_lbl = tk.Label(inner, text="Initializing…",
+        self.status_lbl = tk.Label(inner_s, text="Starting first scan…",
                                    font=("Segoe UI", 9),
                                    bg=COLORS["card"], fg=COLORS["subtle"],
                                    anchor="w")
-        self.status_lbl.pack(anchor="w", pady=(6, 12), fill="x")
+        self.status_lbl.pack(anchor="w", pady=(4, 0), fill="x")
 
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("R3P.Horizontal.TProgressbar",
-                         troughcolor=COLORS["border"],
-                         background=COLORS["accent"],
-                         bordercolor=COLORS["card"],
-                         lightcolor=COLORS["accent"],
-                         darkcolor=COLORS["accent"])
-        self.bar = ttk.Progressbar(inner, style="R3P.Horizontal.TProgressbar",
-                                   mode="indeterminate", length=420)
-        self.bar.pack(anchor="w")
-        self.bar.start(8)
+        # Timer row
+        timer_row = tk.Frame(inner_s, bg=COLORS["card"])
+        timer_row.pack(anchor="w", pady=(6, 0))
+        tk.Label(timer_row, text="Next scan in:",
+                 font=("Segoe UI", 8), bg=COLORS["card"], fg=COLORS["subtle"]).pack(side="left")
+        self.countdown_lbl = tk.Label(timer_row, text="–",
+                                      font=("Consolas", 9, "bold"),
+                                      bg=COLORS["card"], fg=COLORS["accent"])
+        self.countdown_lbl.pack(side="left", padx=(6, 0))
 
-        tk.Label(inner, text=f"Server: {self.server_ip}:{SERVER_PORT}",
-                 font=("Consolas", 8),
-                 bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w", pady=(16, 0))
+        # Command notification label
+        self.cmd_lbl = tk.Label(inner_s, textvariable=self._cmd_label_text,
+                                font=("Segoe UI", 8, "italic"),
+                                bg=COLORS["card"], fg=COLORS["info"],
+                                anchor="w", wraplength=440)
+        self.cmd_lbl.pack(anchor="w", pady=(4, 0), fill="x")
 
-        self.footer = tk.Frame(self, bg=COLORS["bg"], pady=10)
-        self.footer.pack(fill="x")
-        self.close_btn = tk.Button(self.footer, text="Please wait…",
+        # Result card
+        self.result_card = tk.Frame(self, bg=COLORS["card"],
+                                    highlightthickness=1,
+                                    highlightbackground=COLORS["border"])
+        self.result_card.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        self.result_inner = tk.Frame(self.result_card, bg=COLORS["card"], padx=22, pady=18)
+        self.result_inner.pack(fill="both", expand=True)
+
+        tk.Label(self.result_inner, text="Waiting for first scan result…",
+                 font=("Segoe UI", 10),
+                 bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w")
+
+        # Footer
+        footer = tk.Frame(self, bg=COLORS["bg"], pady=8)
+        footer.pack(fill="x")
+        self.close_btn = tk.Button(footer, text="Stop Monitoring & Close",
                                    font=("Segoe UI", 9),
-                                   bg=COLORS["border"], fg=COLORS["subtle"],
+                                   bg=COLORS["border"], fg=COLORS["text"],
                                    relief="flat", bd=0, padx=18, pady=6,
-                                   state="disabled", command=self.destroy)
+                                   cursor="hand2", command=self._on_close)
         self.close_btn.pack()
 
+    # ── Helpers ───────────────────────────────────────────────────────────
     def _set_status(self, msg: str):
-        self.status_lbl.config(text=msg)
+        self.after(0, lambda: self.status_lbl.config(text=msg))
         self.update_idletasks()
 
-    # ── background worker ───────────────────────────────────────────────────
-    def _scan_worker(self):
-        data = run_all_checks(lambda m: self.after(0, self._set_status, m))
-        self.after(0, self._set_status, "Sending results to server…")
+    def _set_dot(self, color: str):
+        self.after(0, lambda: self.dot_canvas.itemconfig(self._dot, fill=color))
 
+    def _set_cmd_notice(self, msg: str):
+        self.after(0, lambda: self._cmd_label_text.set(msg))
+
+    def _tick_countdown(self):
+        """Update the countdown label every second."""
+        if self._next_scan_at is not None:
+            remaining = max(0, int(self._next_scan_at - time.time()))
+            self.countdown_lbl.config(text=f"{remaining}s")
+        self.after(1000, self._tick_countdown)
+
+    def _pulse_dot(self):
+        """Flash green dot to indicate a live scan is transmitting."""
+        self._set_dot(COLORS["safe"])
+        self.after(800, lambda: self._set_dot(COLORS["accent"]))
+
+    # ── Continuous monitoring loop (background thread) ────────────────────
+    def _monitor_loop(self):
+        """
+        Main continuous loop:
+          1. Run all security checks
+          2. POST telemetry to /ingest
+          3. Poll for pending remediation commands
+          4. Execute any commands found
+          5. Sleep until next cycle
+        """
+        cycle = 0
+        while not self._stop_event.is_set():
+            cycle += 1
+            t_start = time.time()
+
+            # Update GUI
+            self.after(0, lambda c=cycle: self.monitor_label.config(
+                text=f"🔄  Monitoring Active  [scan #{c}]"
+            ))
+            self._set_dot(COLORS["accent"])
+
+            # ── Step 1: Run checks ────────────────────────────────────────
+            self._set_status(f"Scan #{cycle} — collecting telemetry…")
+            data = run_all_checks(lambda m: self._set_status(m))
+
+            # ── Step 2: POST /ingest ──────────────────────────────────────
+            self._set_status("Sending telemetry to server…")
+            result = self._send_telemetry(data)
+            if result:
+                self.after(0, self._update_result_card, result)
+                self._pulse_dot()
+                self._set_status(
+                    f"Scan #{cycle} complete — "
+                    f"Score: {result.get('risk_score', '?')} | "
+                    f"{result.get('risk_class', '?')} | "
+                    f"Last sent: {datetime.now().strftime('%H:%M:%S')}"
+                )
+            else:
+                self._set_status(f"Scan #{cycle} — ⚠ Could not reach server")
+                self._set_dot(COLORS["high"])
+
+            # ── Step 3: Poll for commands ─────────────────────────────────
+            if self.cmd_poll_on and result:
+                self._poll_and_execute_commands()
+
+            # ── Step 4: Sleep until next cycle ───────────────────────────
+            elapsed = time.time() - t_start
+            sleep_time = max(1, self.scan_interval - elapsed)
+            self._next_scan_at = time.time() + sleep_time
+            self._stop_event.wait(timeout=sleep_time)
+
+    def _send_telemetry(self, data: dict) -> dict | None:
         payload = {
             "host_id":   platform.node(),
             "os":        get_os_info(),
@@ -541,55 +722,85 @@ class ScannerApp(tk.Tk):
             "timestamp": datetime.now().isoformat(),
             "data":      data,
         }
-
         try:
-            api_key = load_api_key()
-            headers = {"X-API-Key": api_key}
-            # verify=False allows self-signed certs in lab/demo environments.
-            # Suppress the console warning it produces so the GUI stays clean.
             import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            resp = requests.post(self.api_url, json=payload, headers=headers, timeout=15, verify=False)
+            resp = requests.post(
+                f"{self.base_url}/ingest",
+                json=payload,
+                headers={"X-API-Key": self.api_key},
+                timeout=15,
+                verify=False,
+            )
             if resp.status_code == 200:
-                self.after(0, self._show_result, resp.json())
-            else:
-                self.after(0, self._show_error,
-                           f"Server returned HTTP {resp.status_code}.\n{resp.text[:200]}")
-        except requests.exceptions.ConnectionError:
-            self.after(0, self._show_error,
-                       f"Cannot reach server at {self.server_ip}:{SERVER_PORT}.\n\n"
-                       "Make sure the R3P backend is running.\n\n"
-                       "Delete r3p_server.txt next to this app to re-enter the IP.")
-        except Exception as exc:
-            self.after(0, self._show_error, str(exc))
+                return resp.json()
+        except Exception as e:
+            print(f"[SEND ERROR] {e}")
+        return None
 
-    # ── result layout ───────────────────────────────────────────────────────
-    def _show_result(self, result: dict):
-        self.bar.stop()
-        self.scan_card.destroy()
+    def _poll_and_execute_commands(self):
+        """Poll for pending commands, execute them, and ACK each one."""
+        try:
+            resp = requests.get(
+                f"{self.base_url}/commands/{platform.node()}",
+                headers={"X-API-Key": self.api_key},
+                timeout=10,
+                verify=False,
+            )
+            if resp.status_code != 200:
+                return
+            commands = resp.json()
+        except Exception:
+            return
+
+        for cmd in commands:
+            cmd_id  = cmd.get("id")
+            cmd_key = cmd.get("command_key", "")
+
+            self._set_cmd_notice(f"⚙ Executing remote fix: '{cmd_key}'…")
+            success, output = execute_remediation(cmd_key)
+
+            self._ack_command(cmd_id, "done" if success else "failed", output)
+            notice = (
+                f"✅ Fix applied: '{cmd_key}'" if success
+                else f"❌ Fix failed: '{cmd_key}' — {output[:60]}"
+            )
+            self._set_cmd_notice(notice)
+            # Clear notice after 30 seconds
+            self.after(30000, lambda: self._cmd_label_text.set(""))
+
+    def _ack_command(self, cmd_id: int, status: str, output: str):
+        try:
+            requests.post(
+                f"{self.base_url}/commands/{platform.node()}/{cmd_id}/ack",
+                json={"status": status, "output": output},
+                headers={"X-API-Key": self.api_key},
+                timeout=10,
+                verify=False,
+            )
+        except Exception:
+            pass
+
+    # ── Result card update ────────────────────────────────────────────────
+    def _update_result_card(self, result: dict):
+        # Destroy old widgets
+        for w in self.result_inner.winfo_children():
+            w.destroy()
 
         risk_class = result.get("risk_class", "UNKNOWN")
         risk_score = result.get("risk_score", 0)
-        flagged    = result.get("flagged", [])
+        flagged    = result.get("flagged", {})
         color = RISK_COLORS.get(risk_class, COLORS["subtle"])
 
-        card = tk.Frame(self, bg=COLORS["card"],
-                        highlightthickness=1,
-                        highlightbackground=COLORS["border"])
-        card.pack(fill="both", expand=True, padx=20, pady=(0, 10))
-
-        inner = tk.Frame(card, bg=COLORS["card"], padx=28, pady=22)
-        inner.pack(fill="both", expand=True)
-
-        # risk badge
-        badge = tk.Frame(inner, bg=color, padx=14, pady=5)
-        badge.pack(anchor="w", pady=(0, 12))
+        # Risk badge
+        badge = tk.Frame(self.result_inner, bg=color, padx=14, pady=5)
+        badge.pack(anchor="w", pady=(0, 10))
         tk.Label(badge, text=f"  {risk_class}  ",
                  font=("Segoe UI", 13, "bold"),
                  bg=color, fg="white").pack()
 
-        # score row
-        row = tk.Frame(inner, bg=COLORS["card"])
+        # Score row
+        row = tk.Frame(self.result_inner, bg=COLORS["card"])
         row.pack(anchor="w", pady=(0, 4))
         tk.Label(row, text="Risk Score: ",
                  font=("Segoe UI", 10),
@@ -598,38 +809,32 @@ class ScannerApp(tk.Tk):
                  font=("Segoe UI", 10, "bold"),
                  bg=COLORS["card"], fg=color).pack(side="left")
 
-        # Handle both list (old backend) and dict (new backend) formats
         if isinstance(flagged, dict):
-            total_flagged = sum(len(items) for items in flagged.values())
+            total_flagged = sum(len(v) for v in flagged.values())
         else:
             total_flagged = len(flagged)
 
-        tk.Label(inner,
-                 text=f"Machine: {platform.node()}   |   "
-                      f"{total_flagged} checks flagged",
+        tk.Label(self.result_inner,
+                 text=f"Machine: {platform.node()}   |   {total_flagged} issues flagged",
                  font=("Segoe UI", 8),
-                 bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w", pady=(0, 12))
+                 bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w", pady=(0, 10))
 
-        tk.Frame(inner, bg=COLORS["border"], height=1).pack(fill="x", pady=(0, 10))
+        tk.Frame(self.result_inner, bg=COLORS["border"], height=1).pack(fill="x", pady=(0, 8))
 
         if total_flagged > 0:
-            tk.Label(inner, text="⚠  Issues Found:",
+            tk.Label(self.result_inner, text="⚠  Issues Detected:",
                      font=("Segoe UI", 9, "bold"),
                      bg=COLORS["card"], fg=COLORS["warning"]).pack(anchor="w", pady=(0, 4))
-            
-            # Display items grouped by phase if it's a dict
+
             if isinstance(flagged, dict):
                 for phase, items in flagged.items():
                     if not items:
                         continue
-                    
-                    # Phase Header
-                    tk.Label(inner, text=f"[{phase}]",
+                    tk.Label(self.result_inner, text=f"[{phase}]",
                              font=("Segoe UI", 8, "bold"),
                              bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w", pady=(6, 2))
-                             
                     for item in items:
-                        r2 = tk.Frame(inner, bg=COLORS["card"])
+                        r2 = tk.Frame(self.result_inner, bg=COLORS["card"])
                         r2.pack(anchor="w", pady=1)
                         tk.Label(r2, text="•",
                                  font=("Segoe UI", 9),
@@ -637,47 +842,25 @@ class ScannerApp(tk.Tk):
                         tk.Label(r2, text=item.replace("_", " ").title(),
                                  font=("Segoe UI", 9),
                                  bg=COLORS["card"], fg=COLORS["text"]).pack(side="left")
-            else:
-                # Fallback if flat list
-                for item in flagged[:10]:
-                    r2 = tk.Frame(inner, bg=COLORS["card"])
-                    r2.pack(anchor="w", pady=1)
-                    tk.Label(r2, text="•",
-                             font=("Segoe UI", 9),
-                             bg=COLORS["card"], fg=color).pack(side="left", padx=(8, 4))
-                    tk.Label(r2, text=item.replace("_", " ").title(),
-                             font=("Segoe UI", 9),
-                             bg=COLORS["card"], fg=COLORS["text"]).pack(side="left")
-                if len(flagged) > 10:
-                    tk.Label(inner,
-                             text=f"   … and {len(flagged) - 10} more (see server dashboard)",
-                             font=("Segoe UI", 8),
-                             bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w")
         else:
-            tk.Label(inner, text="✅  No issues detected — system looks clean!",
+            tk.Label(self.result_inner, text="✅  No issues detected — system looks clean!",
                      font=("Segoe UI", 10),
                      bg=COLORS["card"], fg=COLORS["safe"]).pack(anchor="w")
 
-        tk.Label(inner, text="✓ Results saved to R3P server",
+        tk.Label(self.result_inner, text="✓ Results streaming to R3P admin dashboard",
                  font=("Segoe UI", 8),
                  bg=COLORS["card"], fg=COLORS["safe"]).pack(anchor="w", pady=(10, 0))
 
-        self.close_btn.config(text="Close", state="normal",
-                              bg=COLORS["accent"], fg="white",
-                              activebackground="#7c73ff")
-
-    def _show_error(self, msg: str):
-        self.bar.stop()
-        self.status_lbl.config(text=f"❌ Error:\n\n{msg}",
-                               fg=COLORS["high"],
-                               font=("Segoe UI", 9),
-                               justify="left", wraplength=420)
-        self.close_btn.config(text="Close", state="normal",
-                              bg=COLORS["border"], fg=COLORS["text"])
+    def _on_close(self):
+        self._stop_event.set()
+        self.destroy()
 
 
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
 def main():
+    # Register auto-start (only if .exe)
+    register_auto_start()
+
     server_ip = load_server_ip()
 
     if not server_ip:
@@ -687,7 +870,7 @@ def main():
         if not server_ip:
             sys.exit(0)
 
-    app = ScannerApp(server_ip)
+    app = MonitorApp(server_ip)
     app.mainloop()
 
 
