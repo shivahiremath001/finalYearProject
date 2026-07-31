@@ -4,6 +4,9 @@ import './App.css'
 // ── API config ────────────────────────────────────────────────────────────────
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+// Add ngrok bypass header for all fetch requests (no-op when not using ngrok)
+const FETCH_HEADERS = { 'ngrok-skip-browser-warning': 'true' }
+
 const SEVERITY_COLOR = {
   CRITICAL: 'sev-critical',
   HIGH: 'sev-high',
@@ -90,7 +93,7 @@ const MITRE_MAPPING = {
 }
 
 function apiFetch(path, options = {}, token = null) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  const headers = { 'Content-Type': 'application/json', ...FETCH_HEADERS, ...(options.headers || {}) }
   if (token) headers['Authorization'] = `Bearer ${token}`
   return fetch(`${API_BASE}${path}`, { ...options, headers })
 }
@@ -654,7 +657,7 @@ function FleetOverview({ token, onLogout, username }) {
 
   // WebSocket
   useEffect(() => {
-    const wsUrl = `${API_BASE.replace(/^http/, 'ws')}/ws/live?token=${token}`
+    const wsUrl = `${API_BASE.replace(/^http/, 'ws')}/ws/live?token=${token}&ngrok-skip-browser-warning=true`
     let retryTimer = null
     const connect = () => {
       try {

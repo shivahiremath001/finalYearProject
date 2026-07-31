@@ -1,0 +1,250 @@
+================================================================================
+  R3P — Ransomware Readiness & Risk Profiler
+  PROJECT REPORT
+  Generated: 2026-08-01
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 1 — PROJECT OVERVIEW
+────────────────────────────────────────────────────────────────────────────────
+
+R3P is a final-year project that provides a centralized dashboard for monitoring
+the security posture of Windows machines against ransomware threats. It consists
+of three components:
+
+  1. Backend   — FastAPI server (Python) with SQLite database
+  2. Frontend  — React dashboard (Vite) for admin monitoring
+  3. Agent     — Windows collector (collector.py / R3P_Agent.exe) that runs on
+                 monitored machines and pushes telemetry to the server
+
+Admin credentials (default):
+  Username : admin
+  Password : R3P-Admin-2025!
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 2 — COMPLETED FEATURES
+────────────────────────────────────────────────────────────────────────────────
+
+2.1  BACKEND (FastAPI — backend/main.py)
+-----------------------------------------
+  [x] POST /ingest            — Agent pushes telemetry (authenticated via X-API-Key)
+  [x] GET  /machines          — List all monitored machines
+  [x] GET  /machines/{host}   — Single machine details
+  [x] GET  /machines/{host}/scans — Full scan history
+  [x] GET  /health            — Server liveness check
+  [x] POST /admin/login       — Admin login → JWT token (8-hour expiry)
+  [x] GET  /admin/me          — Current admin info
+  [x] POST /commands/{host}   — Admin queues a remediation command
+  [x] GET  /commands/{host}   — Agent polls for pending commands
+  [x] POST /commands/{host}/{id}/ack — Agent acknowledges command completion
+  [x] GET  /commands/{host}/history  — Admin views command history
+  [x] GET  /remediation/available    — List all available fix commands
+  [x] WS   /ws/live           — WebSocket for real-time dashboard updates
+  [x] JWT-based admin authentication (PyJWT, HS256)
+  [x] SQLite database with Alembic migrations
+  [x] Anomaly detection (Z-score based)
+  [x] MITRE ATT&CK mapping for detected issues
+  [x] Risk scoring engine (backend/scoring.py)
+  [x] Remediation command registry (backend/remediation_registry.py)
+  [x] CORS middleware (allows all origins — tighten in production)
+
+2.2  AGENT (collector.py / R3P_Agent.exe)
+-------------------------------------------
+  [x] Packaged as standalone Windows .exe (PyInstaller)
+  [x] 60-second continuous scan loop
+  [x] Reads server address from r3p_server.txt (next to .exe)
+  [x] Reads config from agent_config.json (API key, scan interval, etc.)
+  [x] Auto-start on Windows login (HKCU Run key, .exe only)
+  [x] Command polling after each scan
+  [x] Remediation executor (PowerShell, local allowlist only)
+  [x] Tkinter GUI with countdown timer and live risk score badge
+  [x] Auto-adds https:// for domain names in r3p_server.txt
+
+  Current 18 Security Checks Collected:
+    1.  rdp_open                — RDP port 3389 open
+    2.  smb_v1_enabled          — Legacy SMBv1 protocol enabled
+    3.  autorun_enabled         — USB/CD AutoRun enabled
+    4.  open_network_shares     — Shares exposed to Everyone
+    5.  macro_execution_enabled — Office macros unrestricted
+    6.  powershell_unrestricted — PowerShell execution policy bypassed
+    7.  uac_disabled            — User Account Control disabled
+    8.  applocker_absent        — No AppLocker policy configured
+    9.  defender_disabled       — Windows Defender real-time protection off
+    10. firewall_on             — Windows Firewall status
+    11. tamper_protection_off   — Defender Tamper Protection disabled
+    12. event_logging_disabled  — Event Log service stopped
+    13. admin_shares_enabled    — ADMIN$/C$ shares exposed
+    14. lsass_protection_off    — LSASS PPL protection disabled
+    15. guest_account_active    — Guest account enabled
+    16. vss_deleted             — No Volume Shadow Copies exist
+    17. backup_configured       — Windows Backup service status
+    18. bitlocker_off           — Drive not BitLocker encrypted
+
+2.3  FRONTEND (React — frontend/src/App.jsx)
+----------------------------------------------
+  [x] Admin login page with JWT authentication
+  [x] Fleet overview dashboard (all monitored machines)
+  [x] Per-machine detail view with issue breakdown
+  [x] Real-time updates via WebSocket (/ws/live)
+  [x] Risk score display with color-coded severity (SAFE/LOW/HIGH/CRITICAL)
+  [x] One-click remediation fix buttons (queues commands to agent)
+  [x] Remediation command history table per machine
+  [x] MITRE ATT&CK tag display per issue
+  [x] Search and sort for fleet overview
+  [x] Toast notification system
+  [x] WebSocket status indicator (connected / reconnecting / error)
+  [x] ngrok-skip-browser-warning header added to all API calls
+
+2.4  INFRASTRUCTURE & DEPLOYMENT
+-----------------------------------
+  [x] ngrok static domain configured:
+        sleep-abnormal-sputter.ngrok-free.dev
+  [x] Frontend .env updated:
+        VITE_API_URL=https://sleep-abnormal-sputter.ngrok-free.dev
+  [x] r3p_server.txt updated:
+        sleep-abnormal-sputter.ngrok-free.dev
+  [x] dist/r3p_server.txt — agent .exe config updated for ngrok
+  [x] dist/agent_config.json — copied alongside agent .exe
+  [x] Auth token saved: C:\Users\SHIVA\AppData\Local\ngrok\ngrok.yml
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 3 — HOW TO RUN (EVERY SESSION)
+────────────────────────────────────────────────────────────────────────────────
+
+Open 3 PowerShell terminals:
+
+  Terminal 1 — Backend:
+    cd backend
+    .\venv\Scripts\activate
+    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  Terminal 2 — ngrok tunnel:
+    ngrok http --url=sleep-abnormal-sputter.ngrok-free.dev 8000
+
+  Terminal 3 — Frontend:
+    cd frontend
+    npm run dev
+    (open http://localhost:5173)
+
+  On monitored machine:
+    Run dist\R3P_Agent.exe
+    (ensure r3p_server.txt is in same folder as the .exe)
+
+  Sanity check:
+    https://sleep-abnormal-sputter.ngrok-free.dev/health → {"status":"ok"}
+    https://sleep-abnormal-sputter.ngrok-free.dev/docs   → Swagger UI
+
+  NOTE: JWT tokens expire after 8 hours. If dashboard shows no data,
+  log out and log back in to get a fresh token.
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 4 — FUTURE PLANS (Discussed)
+────────────────────────────────────────────────────────────────────────────────
+
+4.1  ADDITIONAL TELEMETRY PARAMETERS (Priority Order)
+------------------------------------------------------
+  High Priority (top ransomware vectors):
+    [ ] print_spooler_on            — Print Spooler running (PrintNightmare CVE)
+    [ ] pending_critical_updates    — Unpatched Windows CVEs outstanding
+    [ ] credential_guard_off        — Credential Guard not enabled (pass-the-hash)
+    [ ] windows_update_disabled     — Windows Update service disabled
+    [ ] no_account_lockout          — No brute-force lockout policy
+    [ ] winrm_enabled               — WinRM remote execution open
+    [ ] defender_signatures_outdated — Virus definitions older than 7 days
+    [ ] secure_boot_disabled        — UEFI Secure Boot disabled (bootkit risk)
+
+  Authentication & Account Security:
+    [ ] weak_password_policy        — Min length < 8 / no complexity requirement
+    [ ] local_admin_count           — More than 1 local administrator account
+    [ ] stale_local_accounts        — Accounts unused for 90+ days
+    [ ] admin_named_admin           — Built-in Administrator account still active
+    [ ] no_screen_lock              — No automatic screen lock configured
+
+  Network & Exposure:
+    [ ] telnet_open                 — Port 23 open (cleartext)
+    [ ] ftp_open                    — Port 21 open (cleartext)
+    [ ] wmi_open                    — WMI remote access enabled
+    [ ] netbios_enabled             — NetBIOS over TCP/IP (poisoning attacks)
+    [ ] llmnr_enabled               — LLMNR enabled (LLMNR poisoning)
+    [ ] wifi_connected              — Connected to open/unknown WiFi
+
+  Endpoint Protection:
+    [ ] no_edr_installed            — No EDR/AV software detected
+    [ ] exploit_protection_off      — Windows Exploit Guard not configured
+    [ ] controlled_folder_off       — Controlled Folder Access off (ransomware guard)
+
+  Patching & Updates:
+    [ ] os_eol                      — OS version is end-of-life (no more patches)
+    [ ] last_patch_days             — Days since last Windows security update
+    [ ] audit_policy_off            — Security event auditing not configured
+
+  System Hardening:
+    [ ] dcom_enabled                — DCOM enabled (lateral movement vector)
+    [ ] remote_registry_on          — Remote Registry service enabled
+    [ ] scheduled_tasks_suspicious  — Non-Microsoft scheduled tasks present
+    [ ] unsigned_drivers            — Unsigned kernel drivers loaded
+
+4.2  ARCHITECTURE IMPROVEMENTS
+---------------------------------
+  [ ] Switch from SQLite to PostgreSQL for production scalability
+  [ ] Add multi-admin support with role-based access control (RBAC)
+  [ ] Implement alert thresholds and email/SMS notifications
+  [ ] Add historical trend charts (risk score over time per machine)
+  [ ] Export reports as PDF per machine or fleet-wide
+  [ ] Dark/light mode toggle on dashboard
+  [ ] Mobile-responsive dashboard layout
+
+4.3  SECURITY HARDENING (Production Readiness)
+-----------------------------------------------
+  [ ] Tighten CORS to specific frontend domain only
+  [ ] Rotate JWT_SECRET to a strong random value
+  [ ] Enforce HTTPS on backend (TLS certs — generate_cert.py already included)
+  [ ] Add rate limiting on /ingest endpoint (prevent agent flooding)
+  [ ] Implement API key rotation mechanism for agents
+  [ ] Add IP allowlisting for admin endpoints
+  [ ] Enable HSTS, CSP, and security headers on frontend
+
+4.4  AGENT IMPROVEMENTS
+------------------------
+  [ ] Silent/headless mode for the agent (no GUI, background service)
+  [ ] Automatic agent update mechanism
+  [ ] Agent self-health reporting (CPU/RAM usage, uptime)
+  [ ] Agent uninstall/deregister command from dashboard
+  [ ] Support for Linux/macOS endpoints (cross-platform collector)
+
+4.5  DEPLOYMENT
+-----------------
+  [ ] Deploy backend to cloud VM (AWS EC2 / Azure / DigitalOcean)
+  [ ] Replace ngrok with a real domain + reverse proxy (Nginx)
+  [ ] Containerize backend with Docker + docker-compose
+  [ ] CI/CD pipeline for automated builds and deployments
+  [ ] Host frontend on Vercel/Netlify
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 5 — KNOWN ISSUES & NOTES
+────────────────────────────────────────────────────────────────────────────────
+
+  - JWT tokens expire after 8 hours. Users must re-login after expiry.
+    The dashboard will show 403 on WebSocket if token is stale.
+
+  - ngrok free tier: WebSocket works but requires the
+    "ngrok-skip-browser-warning" header/query param (already implemented).
+
+  - The static ngrok domain (sleep-abnormal-sputter.ngrok-free.dev) is
+    session-bound — ngrok must be running for the agent and dashboard
+    to communicate with the backend.
+
+  - The agent .exe reads r3p_server.txt from the same folder as the .exe.
+    Both files must always be together when deploying to another machine.
+
+  - collector.py must be run with admin privileges (UAC elevation) for
+    some checks like BitLocker, LSASS, and driver checks to return
+    accurate results.
+
+================================================================================
+END OF REPORT
+================================================================================
