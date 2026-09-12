@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { Shield, ShieldAlert, TriangleAlert, Info, ShieldCheck, Monitor, Clock, Settings, CheckCircle2, XCircle, TrendingUp, TrendingDown, Minus, Circle, User, Zap, X, Sun, Moon, Crosshair } from 'lucide-react'
 import './App.css'
 
 // ── API config ────────────────────────────────────────────────────────────────
@@ -116,7 +117,7 @@ function ToastContainer({ toasts, onDismiss }) {
     <div className="toast-container">
       {toasts.map(t => (
         <div key={t.id} className={`toast toast-${t.type}`} onClick={() => onDismiss(t.id)}>
-          <span className="toast-icon">{t.type === 'anomaly' ? '⚠' : t.type === 'success' ? '✅' : 'ℹ'}</span>
+          <span className="toast-icon">{t.type === 'anomaly' ? <TriangleAlert size={24} /> : t.type === 'success' ? <CheckCircle2 size={24} /> : <Info size={24} />}</span>
           <div className="toast-body">
             <span className="toast-title">{t.title}</span>
             <span className="toast-msg">{t.message}</span>
@@ -133,8 +134,8 @@ function ScoreGauge({ score, riskClass }) {
   const r = 56, sw = 10, norm = r - sw/2, circ = 2 * Math.PI * norm
   const pct  = Math.min(100, Math.max(0, score)) / 100
   const dash  = pct * circ * 0.75
-  const cmap  = { CRITICAL:'#ef4444','HIGH RISK':'#f97316','LOW RISK':'#eab308', SAFE:'#10b981' }
-  const col   = cmap[riskClass] || '#00e5ff'
+  const cmap  = { CRITICAL:'#ff453a','HIGH RISK':'#ff9f0a','LOW RISK':'#ffd60a', SAFE:'#30d158' }
+  const col   = cmap[riskClass] || '#0a84ff'
   const cx    = r + sw/2, cy = r + sw/2
 
   return (
@@ -149,7 +150,7 @@ function ScoreGauge({ score, riskClass }) {
           transform={`rotate(135,${cx},${cy})`} />
       </svg>
       <div className="gauge-center">
-        <span className="gauge-score" style={{color:col, textShadow: `0 0 12px ${col}66`}}>{score}</span>
+        <span className="gauge-score">{score}</span>
         <span className="gauge-label">/100</span>
       </div>
     </div>
@@ -157,7 +158,7 @@ function ScoreGauge({ score, riskClass }) {
 }
 
 // ── Risk Timeline Chart (Canvas-based) ────────────────────────────────────────
-function RiskTimeline({ scoreHistory }) {
+function RiskTimeline({ scoreHistory, theme }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -177,11 +178,16 @@ function RiskTimeline({ scoreHistory }) {
     const ch = h - pad.top - pad.bottom
     const n = scoreHistory.length
 
+    // Get computed theme colors for Canvas
+    const style = getComputedStyle(document.documentElement)
+    const gridColor = style.getPropertyValue('--border2').trim() || '#3f3f46'
+    const textColor = style.getPropertyValue('--subtle').trim() || '#a1a1aa'
+
     // Clear
     ctx.clearRect(0, 0, w, h)
 
     // Grid lines (Subtle tactical map grid)
-    ctx.strokeStyle = '#3f3f46'
+    ctx.strokeStyle = gridColor
     ctx.lineWidth = 1
     for (let i = 0; i <= 4; i++) {
       const y = pad.top + (ch / 4) * i
@@ -190,8 +196,8 @@ function RiskTimeline({ scoreHistory }) {
       ctx.lineTo(w - pad.right, y)
       ctx.stroke()
       // Labels
-      ctx.fillStyle = '#a1a1aa'
-      ctx.font = '10px JetBrains Mono, monospace'
+      ctx.fillStyle = textColor
+      ctx.font = '10px -apple-system, BlinkMacSystemFont, monospace'
       ctx.textAlign = 'right'
       ctx.fillText((100 - i * 25).toString(), pad.left - 8, y + 3)
     }
@@ -217,9 +223,9 @@ function RiskTimeline({ scoreHistory }) {
     ctx.fillStyle = gradient
     ctx.fill()
 
-    // Line (Tech Cyan)
+    // Line (Apple Blue)
     ctx.beginPath()
-    ctx.strokeStyle = '#00e5ff'
+    ctx.strokeStyle = '#0a84ff'
     ctx.lineWidth = 2
     ctx.lineJoin = 'round'
     points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y))
@@ -238,17 +244,17 @@ function RiskTimeline({ scoreHistory }) {
         ctx.fillStyle = '#ef4444' // solid red
         ctx.fill()
       } else {
-        // Normal dot — Tech Cyan
+        // Normal dot — Apple Blue
         ctx.beginPath()
         ctx.arc(p.x, p.y, 3, 0, Math.PI * 2)
-        ctx.fillStyle = '#00e5ff'
+        ctx.fillStyle = '#0a84ff'
         ctx.fill()
       }
     })
 
     // X-axis labels
-    ctx.fillStyle = '#a1a1aa'
-    ctx.font = '10px JetBrains Mono, monospace'
+    ctx.fillStyle = textColor
+    ctx.font = '10px -apple-system, BlinkMacSystemFont, monospace'
     ctx.textAlign = 'center'
     const indices = [0, Math.floor(n / 2), n - 1]
     indices.forEach(i => {
@@ -258,7 +264,7 @@ function RiskTimeline({ scoreHistory }) {
         ctx.fillText(label, points[i].x, h - 8)
       }
     })
-  }, [scoreHistory])
+  }, [scoreHistory, theme])
 
   if (!scoreHistory || scoreHistory.length < 2) {
     return <div className="timeline-empty muted">Waiting for more scans to render timeline…</div>
@@ -271,8 +277,8 @@ function RiskTimeline({ scoreHistory }) {
         <canvas ref={canvasRef} className="timeline-canvas" />
       </div>
       <div className="timeline-legend">
-        <span className="legend-item"><span className="legend-dot" style={{background:'#00e5ff'}} />Normal</span>
-        <span className="legend-item"><span className="legend-dot legend-dot-anomaly" style={{background:'#ef4444', boxShadow: '0 0 8px #ef4444'}} />Anomaly</span>
+        <span className="legend-item"><span className="legend-dot" style={{background:'#0a84ff'}} />Normal</span>
+        <span className="legend-item"><span className="legend-dot legend-dot-anomaly" style={{background:'#ff453a'}} />Anomaly</span>
       </div>
     </div>
   )
@@ -283,7 +289,7 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
   return (
     <div className="modal-overlay" onClick={onCancel}>
       <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
-        <div className="confirm-icon">⚠</div>
+        <div className="confirm-icon"><TriangleAlert size={48} /></div>
         <p className="confirm-msg">{message}</p>
         <div className="confirm-actions">
           <button id="confirm-fix-btn" className="btn btn-danger" onClick={onConfirm}>Yes, Apply Fix</button>
@@ -324,7 +330,7 @@ function LoginPage({ onLogin }) {
   return (
     <div className="login-page">
       <div className="login-card">
-        <div className="login-logo">🛡</div>
+        <div className="login-logo"><Shield size={56} strokeWidth={1.5} /></div>
         <h1 className="login-title">R3P Admin</h1>
         <p className="login-sub">Ransomware Readiness &amp; Risk Profiler</p>
         <form className="login-form" onSubmit={handleSubmit}>
@@ -352,7 +358,7 @@ function LoginPage({ onLogin }) {
 }
 
 // ── Machine Detail Panel ──────────────────────────────────────────────────────
-function MachineDetail({ machine, token, onClose, liveData }) {
+function MachineDetail({ machine, token, onClose, liveData, theme }) {
   const [detail, setDetail] = useState(null)       // from /machines/{h}/detail
   const [cmdHistory, setCmdHistory] = useState([])
   const [availCmds, setAvailCmds] = useState([])
@@ -433,8 +439,8 @@ function MachineDetail({ machine, token, onClose, liveData }) {
     setExpandedIssues(prev => ({ ...prev, [param]: !prev[param] }))
   }
 
-  const statusIcon = { pending: '⏳', executing: '⚙', done: '✅', failed: '❌' }
-  const trendIcon = trend === 'up' ? '▲' : trend === 'down' ? '▼' : '='
+  const statusIcon = { pending: <Clock size={14} />, executing: <Settings size={14} />, done: <CheckCircle2 size={14} />, failed: <XCircle size={14} /> }
+  const trendIcon = trend === 'up' ? <TrendingUp size={14} /> : trend === 'down' ? <TrendingDown size={14} /> : <Minus size={14} />
   const trendClass = trend === 'up' ? 'trend-up' : trend === 'down' ? 'trend-down' : 'trend-stable'
   const totalFlagged = Object.values(flagged).reduce((n, arr) => n + arr.length, 0)
 
@@ -458,14 +464,14 @@ function MachineDetail({ machine, token, onClose, liveData }) {
           <div className="detail-header-right">
             <span className={`online-dot ${offline ? 'offline' : 'online'}`} />
             <span className={offline ? 'offline-text' : 'online-text'}>{offline ? 'Offline' : 'Live'}</span>
-            <button id="close-detail-btn" className="btn btn-ghost btn-sm" onClick={onClose}>✕ Close</button>
+            <button id="close-detail-btn" className="btn btn-ghost btn-sm" onClick={onClose}><X size={16} style={{marginRight: 4, verticalAlign: 'text-bottom'}} /> Close</button>
           </div>
         </div>
 
         {/* Anomaly Alert Banner */}
         {anomaly?.is_anomaly && (
           <div className="anomaly-alert">
-            <div className="anomaly-alert-icon">⚠</div>
+            <div className="anomaly-alert-icon"><TriangleAlert size={28} /></div>
             <div className="anomaly-alert-body">
               <span className="anomaly-alert-title">Anomaly Detected</span>
               <span className="anomaly-alert-msg">
@@ -496,7 +502,7 @@ function MachineDetail({ machine, token, onClose, liveData }) {
         </div>
 
         {/* Risk Timeline Chart */}
-        {!loading && <RiskTimeline scoreHistory={detail?.score_history} />}
+        {!loading && <RiskTimeline scoreHistory={detail?.score_history} theme={theme} />}
 
         {loading && <div className="loading-row"><div className="skeleton skeleton-block" /><div className="skeleton skeleton-block" style={{ width: '70%' }} /></div>}
 
@@ -514,7 +520,7 @@ function MachineDetail({ machine, token, onClose, liveData }) {
               return (
                 <div key={phase} className="phase-row">
                   <div className="phase-header">
-                    <span className="phase-name">⚔ {phase}</span>
+                    <span className="phase-name"><Crosshair size={16} style={{marginRight: 8, verticalAlign: 'text-bottom'}} /> {phase}</span>
                     <span className={`sev-dot ${SEVERITY_COLOR[worstSev]}`} />
                     <span className="phase-count">{params.length} issue{params.length > 1 ? 's' : ''}</span>
                   </div>
@@ -566,7 +572,7 @@ function MachineDetail({ machine, token, onClose, liveData }) {
                                   className="btn btn-fix"
                                   onClick={() => handleFixClick(param)}
                                 >
-                                  ⚡ Fix
+                                  <Zap size={14} style={{verticalAlign: 'text-bottom'}} /> Fix
                                 </button>
                               )
                             ) : (
@@ -585,7 +591,7 @@ function MachineDetail({ machine, token, onClose, liveData }) {
 
         {!loading && totalFlagged === 0 && (
           <div className="all-clear">
-            <span>✅</span>
+            <span><ShieldCheck size={48} color="var(--safe)" /></span>
             <p>No misconfigurations detected — machine looks clean!</p>
           </div>
         )}
@@ -623,7 +629,7 @@ function MachineDetail({ machine, token, onClose, liveData }) {
 }
 
 // ── Fleet Overview ────────────────────────────────────────────────────────────
-function FleetOverview({ token, onLogout, username }) {
+function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
   const [machines, setMachines] = useState([])
   const [liveData, setLiveData] = useState({})
   const [selected, setSelected] = useState(null)
@@ -726,68 +732,108 @@ function FleetOverview({ token, onLogout, username }) {
   }
 
   const selectedMachine = machines.find(m => m.hostname === selected)
-  const wsIcon = { connected: '🟢', reconnecting: '🟡', error: '🔴', connecting: '⚪' }
+  const wsIcon = {
+    connected: <Circle fill="var(--safe)" stroke="none" size={10} />,
+    reconnecting: <Circle fill="var(--low)" stroke="none" size={10} />,
+    error: <Circle fill="var(--critical)" stroke="none" size={10} />,
+    connecting: <Circle fill="var(--subtle)" stroke="none" size={10} />
+  }
 
   return (
-    <div className="dashboard">
+    <div className="dashboard layout-apple">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-      {/* Navbar */}
-      <nav className="navbar">
-        <div className="navbar-brand">
-          <span className="brand-shield">🛡</span>
-          <span className="brand-name">R3P</span>
-          <span className="brand-sub">Admin Dashboard</span>
+      {/* Sidebar */}
+      <aside className="apple-sidebar">
+        <div className="sidebar-brand">
+          <Shield size={32} strokeWidth={1.5} className="brand-icon" />
+          <div className="brand-text">
+            <span className="brand-name">R3P Admin</span>
+            <span className="brand-sub">Ransomware Readiness</span>
+          </div>
         </div>
-        <div className="navbar-right">
-          <span className="ws-status" title={`WebSocket: ${wsStatus}`}>{wsIcon[wsStatus]} Live Feed</span>
-          {lastUpdate && <span className="last-update muted">Updated {timeSince(lastUpdate.toISOString())}</span>}
-          <span className="admin-user">👤 {username}</span>
-          <button id="logout-btn" className="btn btn-ghost btn-sm" onClick={onLogout}>Sign Out</button>
-        </div>
-      </nav>
 
-      <div className="dashboard-body">
-        {/* Stat Cards */}
-        <div className="stat-cards">
-          <div className="stat-card stat-card-total">
-            <div className="stat-icon">🖥</div>
+        <nav className="sidebar-nav">
+          <div className="nav-item active"><Monitor size={18} /> Overview</div>
+          <div className="nav-item"><ShieldAlert size={18} /> Alerts</div>
+          <div className="nav-item"><Settings size={18} /> Settings</div>
+        </nav>
+
+        <div className="sidebar-footer">
+          <div className="status-row">
+            <span className="ws-status" title={`WebSocket: ${wsStatus}`}>{wsIcon[wsStatus]} Live</span>
+            {lastUpdate && <span className="last-update muted">{timeSince(lastUpdate.toISOString())}</span>}
+          </div>
+          
+          <div className="theme-switch-row">
+            <span className="muted" style={{fontWeight:500, fontSize:13}}>Theme</span>
+            <div className="theme-switch" onClick={toggleTheme} title="Toggle Theme">
+              <div className={`theme-switch-knob ${theme}`}></div>
+            </div>
+          </div>
+
+          <div className="user-profile">
+            <div className="avatar"><User size={18} /></div>
+            <div className="user-info">
+              <span className="user-name">{username}</span>
+              <span className="user-role">Administrator</span>
+            </div>
+            <button id="logout-btn" className="btn-icon" onClick={onLogout} title="Sign Out"><X size={16}/></button>
+          </div>
+        </div>
+      </aside>
+
+      <main className="dashboard-main">
+        <div className="main-header">
+          <h1 className="page-title">Fleet Overview</h1>
+          <div className="fleet-controls">
+            <input id="search-machines" type="text" className="search-input"
+              placeholder="Search hostname or IP…"
+              value={searchQ} onChange={e => setSearchQ(e.target.value)} />
+            <button className="btn btn-ghost btn-sm" onClick={fetchMachines}>↻ Refresh</button>
+          </div>
+        </div>
+
+        <div className="apple-widgets">
+          <div className="widget widget-hero">
+            <div className="stat-header">
+              <div className="stat-label">Total Machines</div>
+              <div className="stat-icon"><Monitor size={18} /></div>
+            </div>
             <div className="stat-value">{stats.total}</div>
-            <div className="stat-label">Total Machines</div>
           </div>
-          <div className="stat-card stat-card-critical">
-            <div className="stat-icon">🔴</div>
+          <div className="widget">
+            <div className="stat-header">
+              <div className="stat-label">Critical</div>
+              <div className="stat-icon"><ShieldAlert size={18} color="var(--critical)" /></div>
+            </div>
             <div className="stat-value">{stats.critical}</div>
-            <div className="stat-label">Critical</div>
           </div>
-          <div className="stat-card stat-card-high">
-            <div className="stat-icon">🟠</div>
+          <div className="widget">
+            <div className="stat-header">
+              <div className="stat-label">High Risk</div>
+              <div className="stat-icon"><TriangleAlert size={18} color="var(--high)" /></div>
+            </div>
             <div className="stat-value">{stats.high}</div>
-            <div className="stat-label">High Risk</div>
           </div>
-          <div className="stat-card stat-card-low">
-            <div className="stat-icon">🟡</div>
+          <div className="widget">
+            <div className="stat-header">
+              <div className="stat-label">Low Risk</div>
+              <div className="stat-icon"><Info size={18} color="var(--low)" /></div>
+            </div>
             <div className="stat-value">{stats.low}</div>
-            <div className="stat-label">Low Risk</div>
           </div>
-          <div className="stat-card stat-card-safe">
-            <div className="stat-icon">🟢</div>
+          <div className="widget">
+            <div className="stat-header">
+              <div className="stat-label">Safe</div>
+              <div className="stat-icon"><ShieldCheck size={18} color="var(--safe)" /></div>
+            </div>
             <div className="stat-value">{stats.safe}</div>
-            <div className="stat-label">Safe</div>
           </div>
         </div>
 
         {/* Fleet Table */}
         <div className="fleet-section">
-          <div className="fleet-header">
-            <h2 className="fleet-title">Fleet Overview</h2>
-            <div className="fleet-controls">
-              <input id="search-machines" type="text" className="search-input"
-                placeholder="Search hostname or IP…"
-                value={searchQ} onChange={e => setSearchQ(e.target.value)} />
-              <button className="btn btn-ghost btn-sm" onClick={fetchMachines}>↻ Refresh</button>
-            </div>
-          </div>
           <div className="table-wrap">
             <table className="machine-table">
               <thead>
@@ -831,7 +877,7 @@ function FleetOverview({ token, onLogout, username }) {
                       <td><span className={`row-dot ${offline ? 'offline' : 'online'}`} /></td>
                       <td className="hostname-cell">
                         <strong>{m.hostname}</strong>
-                        {hasAnomaly && <span className="anomaly-indicator" title="Anomaly detected">⚠</span>}
+                        {hasAnomaly && <span className="anomaly-indicator" title="Anomaly detected"><TriangleAlert size={14} color="var(--critical)" style={{marginLeft: 8, verticalAlign: 'text-bottom'}} /></span>}
                       </td>
                       <td className="muted">{m.ip_address}</td>
                       <td className="muted os-cell">{m.os_version || '—'}</td>
@@ -846,9 +892,9 @@ function FleetOverview({ token, onLogout, username }) {
                       </td>
                       <td><span className={`risk-badge-sm ${RISK_CLASS_COLOR[cls] || ''}`}>{cls}</span></td>
                       <td>
-                        {trend === 'up' ? <span className="trend-arrow trend-up">▲</span>
-                          : trend === 'down' ? <span className="trend-arrow trend-down">▼</span>
-                            : <span className="trend-arrow trend-stable">=</span>}
+                        {trend === 'up' ? <span className="trend-arrow trend-up"><TrendingUp size={16} /></span>
+                          : trend === 'down' ? <span className="trend-arrow trend-down"><TrendingDown size={16} /></span>
+                            : <span className="trend-arrow trend-stable"><Minus size={16} /></span>}
                       </td>
                       <td className="muted">{timeSince(lastSeen)}</td>
                       <td><span className={offline ? 'offline-text' : 'online-text'}>{offline ? 'Offline' : 'Online'}</span></td>
@@ -865,7 +911,7 @@ function FleetOverview({ token, onLogout, username }) {
             </table>
           </div>
         </div>
-      </div>
+      </main>
 
       {selected && selectedMachine && (
         <MachineDetail
@@ -873,6 +919,7 @@ function FleetOverview({ token, onLogout, username }) {
           token={token}
           onClose={() => setSelected(null)}
           liveData={liveData}
+          theme={theme}
         />
       )}
     </div>
@@ -884,6 +931,14 @@ export default function App() {
   // Use localStorage so token survives page reload
   const [token, setToken] = useState(() => localStorage.getItem('r3p_token') || '')
   const [username, setUsername] = useState(() => localStorage.getItem('r3p_user') || '')
+  const [theme, setTheme] = useState(() => localStorage.getItem('r3p_theme') || 'dark')
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('r3p_theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
 
   const handleLogin = (tok, user) => {
     localStorage.setItem('r3p_token', tok)
@@ -897,5 +952,5 @@ export default function App() {
   }
 
   if (!token) return <LoginPage onLogin={handleLogin} />
-  return <FleetOverview token={token} username={username} onLogout={handleLogout} />
+  return <FleetOverview token={token} username={username} onLogout={handleLogout} theme={theme} toggleTheme={toggleTheme} />
 }

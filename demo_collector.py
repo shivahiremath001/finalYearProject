@@ -30,8 +30,33 @@ from tkinter import ttk
 import pystray
 from pystray import MenuItem as item
 from PIL import Image, ImageDraw
+import random
+import string
 
-# ── requests import with friendly error ───────────────────────────────────────
+FAKE_HOSTNAME = "DEMO-PC-" + "".join(random.choices(string.digits, k=4))
+FAKE_IP = f"192.168.1.{random.randint(50, 200)}"
+FAKE_OS = random.choice(["Windows 10 Pro", "Windows 11 Enterprise", "Windows Server 2022"])
+
+MOCK_STATE = {
+    "rdp_open": True,
+    "smb_v1_enabled": True,
+    "autorun_enabled": True,
+    "open_network_shares": True,
+    "macro_execution_enabled": True,
+    "powershell_unrestricted": True,
+    "uac_disabled": True,
+    "applocker_absent": True,
+    "defender_disabled": True,
+    "firewall_on": False,
+    "tamper_protection_off": True,
+    "event_logging_disabled": True,
+    "admin_shares_enabled": True,
+    "lsass_protection_off": True,
+    "guest_account_active": True,
+    "vss_deleted": True,
+    "backup_configured": False,
+    "bitlocker_off": True
+}
 ABOUT_INFO = {
     "smb_v1_enabled": ("SMBv1 Enabled", "SMBv1 is the exploit vector used by WannaCry and NotPetya. Disabling it closes the most common ransomware propagation path."),
     "rdp_open": ("RDP Port 3389 Open", "An open RDP port allows brute-force and credential-stuffing attacks. Disabling the Remote Desktop service blocks this."),
@@ -53,6 +78,7 @@ ABOUT_INFO = {
     "bitlocker_off": ("BitLocker Encryption Off", "Without full disk encryption, physical theft or unauthorized access can easily compromise all stored data.")
 }
 
+# ── requests import with friendly error ───────────────────────────────────────
 try:
     import requests
 except ImportError:
@@ -242,235 +268,77 @@ def _ps(cmd: str, timeout: int = 12) -> str:
 
 # ── SECURITY CHECKS ────────────────────────────────────────────────────────────
 def get_os_info() -> str:
-    return f"{platform.system()} {platform.release()}"
+    return FAKE_OS
 
 
 def get_local_ip() -> str:
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "unknown"
-
-
-def check_rdp_open() -> bool:
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(1)
-    result = s.connect_ex(("127.0.0.1", 3389))
-    s.close()
-    return result == 0
-
-
-def check_firewall_on() -> bool:
-    out = _ps("(Get-NetFirewallProfile | Where-Object { $_.Enabled -eq $false }).Count")
-    try:
-        return int(out) == 0
-    except Exception:
-        out2 = _ps("netsh advfirewall show allprofiles state")
-        return "ON" in out2.upper()
-
-
-def check_smb_v1() -> bool:
-    out = _ps("(Get-SmbServerConfiguration).EnableSMB1Protocol")
-    return out.lower() == "true"
-
-
-def check_defender_disabled() -> bool:
-    out = _ps("(Get-MpComputerStatus -ErrorAction SilentlyContinue).RealTimeProtectionEnabled")
-    return out.lower() != "true"
-
-
-def check_tamper_protection_off() -> bool:
-    out = _ps("(Get-MpComputerStatus -ErrorAction SilentlyContinue).IsTamperProtected")
-    return out.lower() != "true"
-
-
-def check_uac_disabled() -> bool:
-    out = _ps(
-        r"(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"
-        r"\Policies\System' -ErrorAction SilentlyContinue).EnableLUA"
-    )
-    return out.strip() == "0"
-
-
-def check_powershell_unrestricted() -> bool:
-    out = _ps("Get-ExecutionPolicy").lower()
-    return out in ("unrestricted", "bypass")
-
-
-def check_autorun_enabled() -> bool:
-    out = _ps(
-        r"(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion"
-        r"\Policies\Explorer' -ErrorAction SilentlyContinue).NoDriveTypeAutoRun"
-    )
-    try:
-        return int(out.strip()) != 255
-    except Exception:
-        return True
-
-
-def check_guest_account() -> bool:
-    out = _ps("(Get-LocalUser -Name 'Guest' -ErrorAction SilentlyContinue).Enabled")
-    return out.lower() == "true"
-
-
-def check_lsass_protection_off() -> bool:
-    out = _ps(
-        r"(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'"
-        r" -ErrorAction SilentlyContinue).RunAsPPL"
-    )
-    return out.strip() != "1"
-
-
-def check_admin_shares() -> bool:
-    out = _ps(
-        "(Get-SmbShare -ErrorAction SilentlyContinue"
-        r" | Where-Object { $_.Name -match 'ADMIN\$|C\$' }).Count"
-    )
-    try:
-        return int(out.strip()) > 0
-    except Exception:
-        return False
-
-
-def check_event_logging_disabled() -> bool:
-    out = _ps("(Get-Service -Name 'eventlog').Status")
-    return out.lower() != "running"
-
-
-def check_vss_deleted() -> bool:
-    out = _ps(
-        "(Get-WmiObject Win32_ShadowCopy -ErrorAction SilentlyContinue"
-        " | Measure-Object).Count"
-    )
-    try:
-        return int(out.strip()) == 0
-    except Exception:
-        return False
-
-
-def check_backup_configured() -> bool:
-    out = _ps("(Get-Service -Name 'SDRSVC' -ErrorAction SilentlyContinue).Status")
-    return out.lower() == "running"
-
-
-def check_bitlocker_off() -> bool:
-    out = _ps(
-        "(Get-BitLockerVolume -MountPoint 'C:' -ErrorAction SilentlyContinue)"
-        ".VolumeStatus"
-    )
-    return "fullyencrypted" not in out.lower()
-
-
-def check_open_network_shares() -> bool:
-    out = _ps(
-        "Get-SmbShare -ErrorAction SilentlyContinue"
-        " | ForEach-Object { Get-SmbShareAccess $_.Name -ErrorAction SilentlyContinue }"
-        " | Where-Object { $_.AccountName -eq 'Everyone' -and $_.AccessRight -ne 'None' }"
-        " | Measure-Object | Select-Object -ExpandProperty Count"
-    )
-    try:
-        return int(out.strip()) > 0
-    except Exception:
-        return False
-
-
-def check_macro_execution_enabled() -> bool:
-    ps_cmd = (
-        "$officeVersions = @('16.0','15.0','14.0');"
-        "$apps = @('Word','Excel','PowerPoint');"
-        "$found = $false;"
-        "foreach ($ver in $officeVersions) {"
-        "  foreach ($app in $apps) {"
-        "    $path = \"HKCU:\\SOFTWARE\\Microsoft\\Office\\$ver\\$app\\Security\";"
-        "    $val = (Get-ItemProperty $path -ErrorAction SilentlyContinue).VBAWarnings;"
-        "    if ($val -eq 1) { $found = $true }"
-        "  }"
-        "};"
-        "$found"
-    )
-    out = _ps(ps_cmd)
-    return out.lower() == "true"
-
-
-def check_applocker_absent() -> bool:
-    svc = _ps("(Get-Service -Name 'AppIDSvc' -ErrorAction SilentlyContinue).Status")
-    if svc.lower() != "running":
-        return True
-    out = _ps(
-        "(Get-AppLockerPolicy -Effective -ErrorAction SilentlyContinue)"
-        ".RuleCollections.Count"
-    )
-    try:
-        return int(out.strip()) == 0
-    except Exception:
-        return True
+    return FAKE_IP
 
 
 # ── CHECK MANIFEST ─────────────────────────────────────────────────────────────
-CHECKS = [
-    ("rdp_open",                 "Checking RDP port 3389...",              check_rdp_open),
-    ("smb_v1_enabled",           "Checking SMBv1 protocol...",             check_smb_v1),
-    ("autorun_enabled",          "Checking AutoRun settings...",           check_autorun_enabled),
-    ("open_network_shares",      "Checking open network shares...",        check_open_network_shares),
-    ("macro_execution_enabled",  "Checking Office macro settings...",      check_macro_execution_enabled),
-    ("powershell_unrestricted",  "Checking PowerShell policy...",          check_powershell_unrestricted),
-    ("uac_disabled",             "Checking UAC (User Account Control)...", check_uac_disabled),
-    ("applocker_absent",         "Checking AppLocker policy...",           check_applocker_absent),
-    ("defender_disabled",        "Checking Windows Defender...",           check_defender_disabled),
-    ("firewall_on",              "Checking Windows Firewall...",           check_firewall_on),
-    ("tamper_protection_off",    "Checking Tamper Protection...",          check_tamper_protection_off),
-    ("event_logging_disabled",   "Checking Event Log service...",          check_event_logging_disabled),
-    ("admin_shares_enabled",     "Checking default admin shares...",       check_admin_shares),
-    ("lsass_protection_off",     "Checking LSASS protection...",           check_lsass_protection_off),
-    ("guest_account_active",     "Checking Guest account status...",       check_guest_account),
-    ("vss_deleted",              "Checking Volume Shadow Copies...",       check_vss_deleted),
-    ("backup_configured",        "Checking backup service...",             check_backup_configured),
-    ("bitlocker_off",            "Checking BitLocker encryption...",       check_bitlocker_off),
-]
-
+CHECKS_LABELS = {
+    "rdp_open":                 "Checking RDP port 3389...",
+    "smb_v1_enabled":           "Checking SMBv1 protocol...",
+    "autorun_enabled":          "Checking AutoRun settings...",
+    "open_network_shares":      "Checking open network shares...",
+    "macro_execution_enabled":  "Checking Office macro settings...",
+    "powershell_unrestricted":  "Checking PowerShell policy...",
+    "uac_disabled":             "Checking UAC (User Account Control)...",
+    "applocker_absent":         "Checking AppLocker policy...",
+    "defender_disabled":        "Checking Windows Defender...",
+    "firewall_on":              "Checking Windows Firewall...",
+    "tamper_protection_off":    "Checking Tamper Protection...",
+    "event_logging_disabled":   "Checking Event Log service...",
+    "admin_shares_enabled":     "Checking default admin shares...",
+    "lsass_protection_off":     "Checking LSASS protection...",
+    "guest_account_active":     "Checking Guest account status...",
+    "vss_deleted":              "Checking Volume Shadow Copies...",
+    "backup_configured":        "Checking backup service...",
+    "bitlocker_off":            "Checking BitLocker encryption..."
+}
 
 def run_all_checks(status_cb=None) -> dict:
-    results = {}
-    for key, label, fn in CHECKS:
+    # Simulate time passing
+    for key, label in CHECKS_LABELS.items():
         if status_cb:
             status_cb(label)
-        try:
-            results[key] = fn()
-        except Exception:
-            results[key] = False
-    return results
+        time.sleep(0.05)
+    return MOCK_STATE.copy()
 
 
 # ── REMEDIATION EXECUTOR ──────────────────────────────────────────────────────
 def execute_remediation(cmd_key: str) -> tuple[bool, str]:
-    """
-    Look up the PowerShell command from the LOCAL allowlist and execute it.
-    Returns (success: bool, output: str).
-    NEVER executes a command key not present in AGENT_REMEDIATION.
-    """
-    ps_cmd = AGENT_REMEDIATION.get(cmd_key)
-    if ps_cmd is None:
-        return False, f"REJECTED: Unknown command key '{cmd_key}' not in local allowlist."
-
-    try:
-        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive",
-             "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
-            capture_output=True, text=True, timeout=30,
-            creationflags=flags,
-        )
-        output = (r.stdout + r.stderr).strip()
-        success = r.returncode == 0
-        return success, output or ("Success" if success else "No output")
-    except subprocess.TimeoutExpired:
-        return False, "FAILED: PowerShell command timed out after 30 seconds."
-    except Exception as e:
-        return False, f"FAILED: {e}"
+    """Simulated Remediation Executor"""
+    global MOCK_STATE
+    time.sleep(1) # simulate work
+    
+    # Map command keys back to the mock state keys and apply the fix
+    if cmd_key == "disable_smb1":
+        MOCK_STATE["smb_v1_enabled"] = False
+    elif cmd_key == "block_rdp":
+        MOCK_STATE["rdp_open"] = False
+    elif cmd_key == "disable_autorun":
+        MOCK_STATE["autorun_enabled"] = False
+    elif cmd_key == "restrict_powershell":
+        MOCK_STATE["powershell_unrestricted"] = False
+    elif cmd_key == "enable_uac":
+        MOCK_STATE["uac_disabled"] = False
+    elif cmd_key == "enable_defender":
+        MOCK_STATE["defender_disabled"] = False
+    elif cmd_key == "enable_firewall":
+        MOCK_STATE["firewall_on"] = True
+    elif cmd_key == "enable_tamper_protection":
+        MOCK_STATE["tamper_protection_off"] = False
+    elif cmd_key == "enable_event_log":
+        MOCK_STATE["event_logging_disabled"] = False
+    elif cmd_key == "disable_guest":
+        MOCK_STATE["guest_account_active"] = False
+    elif cmd_key == "enable_lsass_protection":
+        MOCK_STATE["lsass_protection_off"] = False
+    else:
+        return False, f"Unknown demo command: {cmd_key}"
+        
+    return True, f"[SIMULATED] Successfully executed {cmd_key}"
 
 
 # ── GUI: SERVER IP SETUP DIALOG ───────────────────────────────────────────────
@@ -807,71 +675,71 @@ class MonitorApp(tk.Tk):
             self._wake_event.clear()
 
     def _send_telemetry(self, data: dict) -> dict | None:
-        payload = {
-            "host_id":   platform.node(),
-            "os":        get_os_info(),
-            "ip":        get_local_ip(),
-            "timestamp": datetime.now().isoformat(),
-            "data":      data,
+        # Simulate network delay for realism
+        time.sleep(0.5)
+        
+        # Build flagged dict from MOCK_STATE directly (offline simulation)
+        flagged = {
+            "Entry Vector": [],
+            "Execution": [],
+            "Evasion & Persistence": [],
+            "Lateral Movement": [],
+            "Recovery Prevention": []
         }
-        try:
-            import urllib3
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            resp = requests.post(
-                f"{self.base_url}/ingest",
-                json=payload,
-                headers={"X-API-Key": self.api_key},
-                timeout=15,
-                verify=False,
-            )
-            if resp.status_code == 200:
-                return resp.json()
-        except Exception as e:
-            print(f"[SEND ERROR] {e}")
-        return None
+        
+        if MOCK_STATE["smb_v1_enabled"]: flagged["Entry Vector"].append("smb_v1_enabled")
+        if MOCK_STATE["rdp_open"]: flagged["Entry Vector"].append("rdp_enabled")
+        if MOCK_STATE["autorun_enabled"]: flagged["Entry Vector"].append("autorun_enabled")
+        if MOCK_STATE["open_network_shares"]: flagged["Entry Vector"].append("open_network_shares")
+        
+        if MOCK_STATE["macro_execution_enabled"]: flagged["Execution"].append("macro_execution_enabled")
+        if MOCK_STATE["powershell_unrestricted"]: flagged["Execution"].append("powershell_unrestricted")
+        if MOCK_STATE["uac_disabled"]: flagged["Execution"].append("uac_disabled")
+        if MOCK_STATE["applocker_absent"]: flagged["Execution"].append("applocker_absent")
+        
+        if MOCK_STATE["defender_disabled"]: flagged["Evasion & Persistence"].append("defender_disabled")
+        if not MOCK_STATE["firewall_on"]: flagged["Evasion & Persistence"].append("firewall_disabled")
+        if MOCK_STATE["tamper_protection_off"]: flagged["Evasion & Persistence"].append("tamper_protection_off")
+        if MOCK_STATE["event_logging_disabled"]: flagged["Evasion & Persistence"].append("event_logging_disabled")
+        
+        if MOCK_STATE["admin_shares_enabled"]: flagged["Lateral Movement"].append("admin_shares_enabled")
+        if MOCK_STATE["lsass_protection_off"]: flagged["Lateral Movement"].append("lsass_protection_off")
+        if MOCK_STATE["guest_account_active"]: flagged["Lateral Movement"].append("guest_account_active")
+        
+        if MOCK_STATE["vss_deleted"]: flagged["Recovery Prevention"].append("vss_deleted")
+        if not MOCK_STATE["backup_configured"]: flagged["Recovery Prevention"].append("backup_absent")
+        if MOCK_STATE["bitlocker_off"]: flagged["Recovery Prevention"].append("bitlocker_off")
+        
+        # Clean empty phases
+        flagged = {k: v for k, v in flagged.items() if v}
+        
+        # Calculate a mock score
+        total_issues = sum(len(v) for v in flagged.values())
+        if total_issues == 0:
+            risk_score, risk_class = 0.0, "SAFE"
+        else:
+            # Quick mock formula
+            risk_score = min(100.0, total_issues * 6.5)
+            if risk_score < 20: risk_class = "SAFE"
+            elif risk_score < 50: risk_class = "LOW RISK"
+            elif risk_score < 80: risk_class = "HIGH RISK"
+            else: risk_class = "CRITICAL"
+        
+        return {
+            "message": "success",
+            "hostname": FAKE_HOSTNAME,
+            "risk_score": round(risk_score, 2),
+            "risk_class": risk_class,
+            "flagged": flagged
+        }
 
     def _poll_and_execute_commands(self):
-        """Poll for pending commands, execute them, and ACK each one."""
-        try:
-            resp = requests.get(
-                f"{self.base_url}/commands/{platform.node()}",
-                headers={"X-API-Key": self.api_key},
-                timeout=10,
-                verify=False,
-            )
-            if resp.status_code != 200:
-                return
-            commands = resp.json()
-        except Exception:
-            return
-
-        for cmd in commands:
-            cmd_id  = cmd.get("id")
-            cmd_key = cmd.get("command_key", "")
-
-            self._set_cmd_notice(f"⚙ Executing remote fix: '{cmd_key}'…")
-            success, output = execute_remediation(cmd_key)
-
-            self._ack_command(cmd_id, "done" if success else "failed", output)
-            notice = (
-                f"✅ Fix applied: '{cmd_key}'" if success
-                else f"❌ Fix failed: '{cmd_key}' — {output[:60]}"
-            )
-            self._set_cmd_notice(notice)
-            # Clear notice after 30 seconds
-            self.after(30000, lambda: self._cmd_label_text.set(""))
+        """Offline demo: no remote polling."""
+        pass
 
     def _ack_command(self, cmd_id: int, status: str, output: str):
-        try:
-            requests.post(
-                f"{self.base_url}/commands/{platform.node()}/{cmd_id}/ack",
-                json={"status": status, "output": output},
-                headers={"X-API-Key": self.api_key},
-                timeout=10,
-                verify=False,
-            )
-        except Exception:
-            pass
+        """Offline demo: no ACKs sent."""
+        pass
 
     # ── Result card update ────────────────────────────────────────────────
     def _update_result_card(self, result: dict):
@@ -907,7 +775,7 @@ class MonitorApp(tk.Tk):
             total_flagged = len(flagged)
 
         tk.Label(self.result_inner,
-                 text=f"Machine: {platform.node()}   |   {total_flagged} issues flagged",
+                 text=f"Machine: {FAKE_HOSTNAME} (DEMO)  |   {total_flagged} issues flagged",
                  font=("Segoe UI", 8),
                  bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w", pady=(0, 10))
 
@@ -974,7 +842,6 @@ class MonitorApp(tk.Tk):
     def _on_close(self):
         # Hide window instead of destroying it
         self.withdraw()
-
 
     def _show_about(self):
         """Displays an accordion-style modal explaining each security parameter."""
@@ -1057,7 +924,6 @@ def main():
 
     app = MonitorApp(server_ip)
     app.mainloop()
-
 
 if __name__ == "__main__":
     main()
