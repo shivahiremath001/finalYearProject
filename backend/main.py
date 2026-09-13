@@ -65,7 +65,7 @@ from schemas import (
     IngestRequest, ScanResponse, MachineOut, ScanOut,
     AdminLogin, TokenOut, AdminOut,
     IssueCommand, CommandOut, CommandAck, CommandHistoryOut,
-    RemediationCommandDef,
+    RemediationCommandDef, PolicyExceptionCreate, PolicyExceptionOut
 )
 from scoring import score, get_mitre_mapping, get_mitre_hits, MITRE_MAPPING
 import crud
@@ -150,6 +150,7 @@ def startup_event():
     db = SessionLocal()
     try:
         ensure_default_admin(db)
+        crud.seed_dummy_machine(db)
     finally:
         db.close()
 
@@ -174,6 +175,13 @@ async def ingest(
 
     # Get previous score for trend arrow BEFORE upserting
     prev_score = crud.get_previous_score(db, req.host_id)
+
+    # Apply Policy Exceptions
+    exceptions = crud.get_policy_exceptions(db, req.host_id)
+    exc_keys = [e.param_key for e in exceptions]
+    for key in exc_keys:
+        if key in req.data:
+            req.data[key] = False  # Safelist this parameter
 
     # Score the machine (now returns MITRE hits too)
     risk_score, risk_class, flagged, mitre_hits = score(req.data)
@@ -595,3 +603,67 @@ def health():
         "service": "R3P Backend v2",
         "ws_clients": len(manager.active),
     }
+# ─────────────────────────────────────────────────────────────────────────────
+# ENTERPRISE FEATURES: Policies, Global Remediation, Analytics
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/policies", response_model=list[PolicyExceptionOut])
+def get_policies(db: Session = Depends(get_db), admin: str = Depends(get_current_admin)):
+    return crud.get_policy_exceptions(db)
+
+@app.post("/policies", response_model=PolicyExceptionOut)
+def create_policy(
+    policy: PolicyExceptionCreate,
+    db: Session = Depends(get_db),
+    admin: str = Depends(get_current_admin)
+):
+    return crud.create_policy_exception(db, policy.hostname, policy.param_key, policy.reason)
+
+@app.delete("/policies/{exc_id}")
+def delete_policy(
+    exc_id: int,
+    db: Session = Depends(get_db),
+    admin: str = Depends(get_current_admin)
+):
+    crud.delete_policy_exception(db, exc_id)
+    return {"status": "ok"}
+
+@app.post("/commands/global")
+def global_remediation(
+    req: IssueCommand,
+    db: Session = Depends(get_db),
+    admin: str = Depends(get_current_admin)
+):
+    """Finds all machines that currently have this issue and queues a fix for all."""
+    # Find all machines where their *latest* scan has this parameter set to True
+    from sqlalchemy import desc
+    machines = db.query(models.MachineRegistry).all()
+    queued_count = 0
+    for m in machines:
+        latest = db.query(models.ConfigurationScan).filter_by(hostname=m.hostname).order_by(desc(models.ConfigurationScan.scanned_at)).first()
+        if latest and getattr(latest, req.command_key, False):
+            # It has the vulnerability
+            if not crud.has_pending_or_executing(db, m.hostname, req.command_key):
+                crud.queue_command(db, m.hostname, req.command_key, issued_by=admin)
+                queued_count += 1
+    db.commit()
+    return {"status": "queued", "count": queued_count}
+
+@app.get("/analytics/history")
+def get_analytics_history(db: Session = Depends(get_db), admin: str = Depends(get_current_admin)):
+    """Returns the fleet average risk score by day."""
+    from sqlalchemy.sql import func
+    # Group by date part of scanned_at and avg risk score
+    # Note: SQLite uses strftime
+    if db.bind.dialect.name == "sqlite":
+        date_expr = func.strftime('%Y-%m-%d', models.ConfigurationScan.scanned_at)
+    else:
+        date_expr = func.date(models.ConfigurationScan.scanned_at)
+        
+    results = db.query(
+        date_expr.label("date"),
+        func.avg(models.ConfigurationScan.risk_score).label("avg_risk")
+    ).group_by(date_expr).order_by(date_expr).all()
+    
+    history = [{"date": str(r.date), "avgRisk": round(r.avg_risk, 2)} for r in results]
+    return {"history": history}

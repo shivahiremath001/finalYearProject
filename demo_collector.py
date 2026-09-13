@@ -24,6 +24,7 @@ import sys
 import os
 import threading
 import time
+import concurrent.futures
 from datetime import datetime
 import tkinter as tk
 from tkinter import ttk
@@ -55,7 +56,11 @@ MOCK_STATE = {
     "guest_account_active": True,
     "vss_deleted": True,
     "backup_configured": False,
-    "bitlocker_off": True
+    "bitlocker_off": True,
+    "wdigest_enabled": True,
+    "laps_absent": True,
+    "nla_disabled": True,
+    "always_install_elevated": True
 }
 ABOUT_INFO = {
     "smb_v1_enabled": ("SMBv1 Enabled", "SMBv1 is the exploit vector used by WannaCry and NotPetya. Disabling it closes the most common ransomware propagation path."),
@@ -75,7 +80,11 @@ ABOUT_INFO = {
     "admin_shares_enabled": ("Admin Shares Enabled", "Default hidden admin shares (C$, ADMIN$) are frequently used by ransomware to move laterally across the network."),
     "vss_deleted": ("Volume Shadow Copies Deleted", "Ransomware deletes Volume Shadow Copies to prevent you from easily restoring encrypted files."),
     "backup_configured": ("Backup Not Configured", "Without a working backup service, recovery after a ransomware encryption event is nearly impossible."),
-    "bitlocker_off": ("BitLocker Encryption Off", "Without full disk encryption, physical theft or unauthorized access can easily compromise all stored data.")
+    "bitlocker_off": ("BitLocker Encryption Off", "Without full disk encryption, physical theft or unauthorized access can easily compromise all stored data."),
+    "wdigest_enabled": ("WDigest Credentials Enabled", "WDigest stores passwords in clear text in LSASS memory, allowing for easy credential dumping."),
+    "laps_absent": ("LAPS Absent", "Without Microsoft LAPS, local admin passwords are often shared, enabling Pass-the-Hash lateral movement."),
+    "nla_disabled": ("RDP NLA Disabled", "Without Network Level Authentication, RDP is vulnerable to pre-authentication attacks and DoS."),
+    "always_install_elevated": ("AlwaysInstallElevated Enabled", "This policy allows any standard user to install MSI packages with SYSTEM privileges, a massive escalation vector.")
 }
 
 # ── requests import with friendly error ───────────────────────────────────────
@@ -177,6 +186,23 @@ AGENT_REMEDIATION = {
         "-Name 'RunAsPPL' -Value 1 -Type DWord; "
         "Write-Output 'LSASS PPL protection enabled.'"
     ),
+    "disable_wdigest": (
+        "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' "
+        "-Name 'UseLogonCredential' -Value 0 -Type DWord; "
+        "Write-Output 'WDigest UseLogonCredential disabled.'"
+    ),
+    "enable_nla": (
+        "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' "
+        "-Name 'UserAuthentication' -Value 1 -Type DWord; "
+        "Write-Output 'NLA enabled for RDP.'"
+    ),
+    "disable_always_install_elevated": (
+        "Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' "
+        "-Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; "
+        "Remove-ItemProperty -Path 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' "
+        "-Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; "
+        "Write-Output 'AlwaysInstallElevated disabled.'"
+    ),
 }
 
 PARAM_TO_CMD_KEY = {
@@ -190,7 +216,10 @@ PARAM_TO_CMD_KEY = {
     "tamper_protection_off": "enable_tamper_protection",
     "event_logging_disabled": "enable_event_log",
     "guest_account_active": "disable_guest",
-    "lsass_protection_off": "enable_lsass_protection"
+    "lsass_protection_off": "enable_lsass_protection",
+    "wdigest_enabled": "disable_wdigest",
+    "nla_disabled": "enable_nla",
+    "always_install_elevated": "disable_always_install_elevated"
 }
 
 
@@ -294,15 +323,23 @@ CHECKS_LABELS = {
     "guest_account_active":     "Checking Guest account status...",
     "vss_deleted":              "Checking Volume Shadow Copies...",
     "backup_configured":        "Checking backup service...",
-    "bitlocker_off":            "Checking BitLocker encryption..."
+    "bitlocker_off":            "Checking BitLocker encryption...",
+    "wdigest_enabled":          "Checking WDigest credentials...",
+    "laps_absent":              "Checking LAPS installation...",
+    "nla_disabled":             "Checking RDP NLA...",
+    "always_install_elevated":  "Checking AlwaysInstallElevated..."
 }
 
 def run_all_checks(status_cb=None) -> dict:
-    # Simulate time passing
-    for key, label in CHECKS_LABELS.items():
+    def _run_check(key, label):
         if status_cb:
             status_cb(label)
         time.sleep(0.05)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(_run_check, key, label) for key, label in CHECKS_LABELS.items()]
+        concurrent.futures.wait(futures)
+
     return MOCK_STATE.copy()
 
 
@@ -335,6 +372,12 @@ def execute_remediation(cmd_key: str) -> tuple[bool, str]:
         MOCK_STATE["guest_account_active"] = False
     elif cmd_key == "enable_lsass_protection":
         MOCK_STATE["lsass_protection_off"] = False
+    elif cmd_key == "disable_wdigest":
+        MOCK_STATE["wdigest_enabled"] = False
+    elif cmd_key == "enable_nla":
+        MOCK_STATE["nla_disabled"] = False
+    elif cmd_key == "disable_always_install_elevated":
+        MOCK_STATE["always_install_elevated"] = False
     else:
         return False, f"Unknown demo command: {cmd_key}"
         

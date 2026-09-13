@@ -5,6 +5,7 @@ All functions take a SQLAlchemy Session as first argument.
 
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+import models
 from models import MachineRegistry, ConfigurationScan, RemediationCommand
 from schemas import IngestRequest
 from scoring import score
@@ -230,3 +231,66 @@ def has_pending_or_executing(db: Session, hostname: str, command_key: str) -> bo
         )
         .first()
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Policy Exceptions
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_policy_exceptions(db: Session, hostname: str = None) -> list[models.PolicyException]:
+    query = db.query(models.PolicyException)
+    if hostname:
+        query = query.filter(models.PolicyException.hostname == hostname)
+    return query.all()
+
+def create_policy_exception(db: Session, hostname: str, param_key: str, reason: str = None) -> models.PolicyException:
+    existing = db.query(models.PolicyException).filter_by(hostname=hostname, param_key=param_key).first()
+    if existing:
+        return existing
+    
+    exc = models.PolicyException(hostname=hostname, param_key=param_key, reason=reason)
+    db.add(exc)
+    db.commit()
+    db.refresh(exc)
+    return exc
+
+def delete_policy_exception(db: Session, exc_id: int) -> models.PolicyException | None:
+    exc = db.query(models.PolicyException).filter_by(id=exc_id).first()
+    if exc:
+        db.delete(exc)
+        db.commit()
+    return exc
+
+def seed_dummy_machine(db: Session):
+    """Seed a dummy machine into the database for demonstration purposes."""
+    dummy = db.query(MachineRegistry).filter_by(hostname="DUMMY-DEMO-01").first()
+    if not dummy:
+        dummy = MachineRegistry(
+            hostname="DUMMY-DEMO-01",
+            ip_address="10.0.0.99",
+            os_version="Windows 11 Pro",
+            last_risk_score=85.0,
+            last_risk_class="CRITICAL"
+        )
+        db.add(dummy)
+        db.commit()
+        db.refresh(dummy)
+        
+        scan = ConfigurationScan(
+            machine_id=dummy.id,
+            hostname=dummy.hostname,
+            ip_address=dummy.ip_address,
+            smb_v1_enabled=True,
+            rdp_enabled=True,
+            autorun_enabled=True,
+            wdigest_enabled=True,
+            laps_absent=True,
+            nla_disabled=False,
+            always_install_elevated=False,
+            risk_score=85.0,
+            risk_class="CRITICAL",
+            flagged_parameters="smb_v1_enabled,rdp_enabled,autorun_enabled,wdigest_enabled,laps_absent",
+            is_anomaly=False
+        )
+        db.add(scan)
+        db.commit()

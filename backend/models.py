@@ -63,6 +63,12 @@ class ConfigurationScan(Base):
     backup_absent = Column(Boolean, default=False)           # No backup solution detected
     bitlocker_off = Column(Boolean, default=False)           # BitLocker encryption disabled
 
+    # ── NEW PARAMETERS ───────────────────────────────────────────────────────
+    wdigest_enabled = Column(Boolean, default=False)
+    laps_absent = Column(Boolean, default=False)
+    nla_disabled = Column(Boolean, default=False)
+    always_install_elevated = Column(Boolean, default=False)
+
     # ── RISK RESULT ──────────────────────────────────────────────────────────
     risk_score = Column(Float, default=0.0)
     risk_class = Column(String, default="SAFE")              # SAFE | LOW RISK | HIGH RISK | CRITICAL
@@ -104,3 +110,17 @@ class AdminUser(Base):
     is_active       = Column(Boolean, default=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
     last_login      = Column(DateTime(timezone=True), nullable=True)
+
+class PolicyException(Base):
+    """
+    Security exceptions. If a machine has an exception for a parameter,
+    it is ignored during scoring.
+    """
+    __tablename__ = "policy_exceptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hostname = Column(String, nullable=False, index=True)
+    param_key = Column(String, nullable=False)
+    reason = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+

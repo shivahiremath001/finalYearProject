@@ -1,9 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Shield, ShieldAlert, TriangleAlert, Info, ShieldCheck, Monitor, Clock, Settings, CheckCircle2, XCircle, TrendingUp, TrendingDown, Minus, Circle, User, Zap, X, Sun, Moon, Crosshair } from 'lucide-react'
+import { 
+  Shield, ShieldAlert, TriangleAlert, Info, ShieldCheck, Monitor, Clock, Settings, 
+  CheckCircle2, XCircle, TrendingUp, TrendingDown, Minus, Circle, User, Zap, X, 
+  Sun, Moon, Crosshair, AlertTriangle, HardDrive, Activity, Map, FileKey, LogOut
+} from 'lucide-react'
 import './App.css'
 
+// Import New Views
+import PoliciesView from './views/PoliciesView'
+import RemediationView from './views/RemediationView'
+import AnalyticsView from './views/AnalyticsView'
+import NetworkMapView from './views/NetworkMapView'
+
 // ── API config ────────────────────────────────────────────────────────────────
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 // Add ngrok bypass header for all fetch requests (no-op when not using ngrok)
 const FETCH_HEADERS = { 'ngrok-skip-browser-warning': 'true' }
@@ -39,6 +49,10 @@ const PARAM_LABELS = {
   vss_deleted: 'No Volume Shadow Copies',
   backup_absent: 'Backup Not Configured',
   bitlocker_off: 'BitLocker Encryption Off',
+  wdigest_enabled: 'WDigest Credentials Enabled',
+  laps_absent: 'LAPS Not Installed',
+  nla_disabled: 'NLA Disabled for RDP',
+  always_install_elevated: 'AlwaysInstallElevated Policy Active',
 }
 const PARAM_SEVERITY = {
   smb_v1_enabled: 'CRITICAL', lsass_protection_off: 'CRITICAL',
@@ -48,7 +62,8 @@ const PARAM_SEVERITY = {
   uac_disabled: 'MEDIUM', tamper_protection_off: 'MEDIUM',
   event_logging_disabled: 'MEDIUM', admin_shares_enabled: 'MEDIUM',
   open_network_shares: 'MEDIUM', guest_account_active: 'MEDIUM',
-  autorun_enabled: 'LOW', applocker_absent: 'LOW',
+  autorun_enabled: 'LOW', applocker_absent: 'LOW', laps_absent: 'MEDIUM',
+  nla_disabled: 'HIGH', wdigest_enabled: 'CRITICAL', always_install_elevated: 'CRITICAL'
 }
 const PARAM_DESCRIPTIONS = {
   smb_v1_enabled: 'SMBv1 is the WannaCry/NotPetya exploit vector. Disable immediately.',
@@ -69,6 +84,10 @@ const PARAM_DESCRIPTIONS = {
   guest_account_active: 'Unauthenticated access to the machine.',
   autorun_enabled: 'Malicious USB drives auto-execute on insert.',
   applocker_absent: 'Any executable can run — no application whitelisting.',
+  wdigest_enabled: 'WDigest stores passwords in clear text in LSASS memory.',
+  laps_absent: 'Without LAPS, local admin passwords can be used for Pass-the-Hash.',
+  nla_disabled: 'RDP is exposed to pre-authentication and DoS attacks.',
+  always_install_elevated: 'Standard users can install malicious MSI packages as SYSTEM.',
 }
 
 // ── MITRE ATT&CK Mapping ─────────────────────────────────────────────────────
@@ -91,6 +110,10 @@ const MITRE_MAPPING = {
   vss_deleted: { id: 'T1490', name: 'Inhibit System Recovery', tactic: 'Impact' },
   backup_absent: { id: 'T1490', name: 'Inhibit System Recovery', tactic: 'Impact' },
   bitlocker_off: { id: 'T1486', name: 'Data Encrypted for Impact', tactic: 'Impact' },
+  always_install_elevated: { id: 'T1548.002', name: 'Bypass User Account Control', tactic: 'Privilege Escalation' },
+  wdigest_enabled: { id: 'T1003.001', name: 'LSASS Memory', tactic: 'Credential Access' },
+  laps_absent: { id: 'T1562', name: 'Impair Defenses', tactic: 'Defense Evasion' },
+  nla_disabled: { id: 'T1021.001', name: 'Remote Desktop Protocol', tactic: 'Lateral Movement' },
 }
 
 function apiFetch(path, options = {}, token = null) {
@@ -639,6 +662,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
   const [sortDir, setSortDir] = useState('desc')
   const [searchQ, setSearchQ] = useState('')
   const [toasts, setToasts] = useState([])
+  const [activeTab, setActiveTab] = useState('overview')
   const wsRef = useRef(null)
   const toastIdRef = useRef(0)
 
@@ -754,9 +778,11 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
         </div>
 
         <nav className="sidebar-nav">
-          <div className="nav-item active"><Monitor size={18} /> Overview</div>
-          <div className="nav-item"><ShieldAlert size={18} /> Alerts</div>
-          <div className="nav-item"><Settings size={18} /> Settings</div>
+          <div className={`nav-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}><Monitor size={18} /> Overview</div>
+          <div className={`nav-item ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}><Map size={18} /> Network Map</div>
+          <div className={`nav-item ${activeTab === 'analytics' ? 'active' : ''}`} onClick={() => setActiveTab('analytics')}><Activity size={18} /> Analytics</div>
+          <div className={`nav-item ${activeTab === 'remediation' ? 'active' : ''}`} onClick={() => setActiveTab('remediation')}><Zap size={18} /> Remediation</div>
+          <div className={`nav-item ${activeTab === 'policies' ? 'active' : ''}`} onClick={() => setActiveTab('policies')}><FileKey size={18} /> Policies</div>
         </nav>
 
         <div className="sidebar-footer">
@@ -778,139 +804,148 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
               <span className="user-name">{username}</span>
               <span className="user-role">Administrator</span>
             </div>
-            <button id="logout-btn" className="btn-icon" onClick={onLogout} title="Sign Out"><X size={16}/></button>
+            <button id="logout-btn" className="btn-icon" onClick={onLogout} title="Sign Out"><LogOut size={16}/></button>
           </div>
         </div>
       </aside>
 
       <main className="dashboard-main">
-        <div className="main-header">
-          <h1 className="page-title">Fleet Overview</h1>
-          <div className="fleet-controls">
-            <input id="search-machines" type="text" className="search-input"
-              placeholder="Search hostname or IP…"
-              value={searchQ} onChange={e => setSearchQ(e.target.value)} />
-            <button className="btn btn-ghost btn-sm" onClick={fetchMachines}>↻ Refresh</button>
-          </div>
-        </div>
+        {activeTab === 'policies' && <PoliciesView token={token} />}
+        {activeTab === 'remediation' && <RemediationView token={token} />}
+        {activeTab === 'analytics' && <AnalyticsView token={token} />}
+        {activeTab === 'map' && <NetworkMapView token={token} />}
+        
+        {activeTab === 'overview' && (
+          <>
+            <div className="main-header">
+              <h1 className="page-title">Fleet Overview</h1>
+              <div className="fleet-controls">
+                <input id="search-machines" type="text" className="search-input"
+                  placeholder="Search hostname or IP…"
+                  value={searchQ} onChange={e => setSearchQ(e.target.value)} />
+                <button className="btn btn-ghost btn-sm" onClick={fetchMachines}>↻ Refresh</button>
+              </div>
+            </div>
 
-        <div className="apple-widgets">
-          <div className="widget widget-hero">
-            <div className="stat-header">
-              <div className="stat-label">Total Machines</div>
-              <div className="stat-icon"><Monitor size={18} /></div>
+            <div className="apple-widgets">
+              <div className="widget widget-hero">
+                <div className="stat-header">
+                  <div className="stat-label">Total Machines</div>
+                  <div className="stat-icon"><Monitor size={18} /></div>
+                </div>
+                <div className="stat-value">{stats.total}</div>
+              </div>
+              <div className="widget">
+                <div className="stat-header">
+                  <div className="stat-label">Critical</div>
+                  <div className="stat-icon"><ShieldAlert size={18} color="var(--critical)" /></div>
+                </div>
+                <div className="stat-value">{stats.critical}</div>
+              </div>
+              <div className="widget">
+                <div className="stat-header">
+                  <div className="stat-label">High Risk</div>
+                  <div className="stat-icon"><TriangleAlert size={18} color="var(--high)" /></div>
+                </div>
+                <div className="stat-value">{stats.high}</div>
+              </div>
+              <div className="widget">
+                <div className="stat-header">
+                  <div className="stat-label">Low Risk</div>
+                  <div className="stat-icon"><Info size={18} color="var(--low)" /></div>
+                </div>
+                <div className="stat-value">{stats.low}</div>
+              </div>
+              <div className="widget">
+                <div className="stat-header">
+                  <div className="stat-label">Safe</div>
+                  <div className="stat-icon"><ShieldCheck size={18} color="var(--safe)" /></div>
+                </div>
+                <div className="stat-value">{stats.safe}</div>
+              </div>
             </div>
-            <div className="stat-value">{stats.total}</div>
-          </div>
-          <div className="widget">
-            <div className="stat-header">
-              <div className="stat-label">Critical</div>
-              <div className="stat-icon"><ShieldAlert size={18} color="var(--critical)" /></div>
-            </div>
-            <div className="stat-value">{stats.critical}</div>
-          </div>
-          <div className="widget">
-            <div className="stat-header">
-              <div className="stat-label">High Risk</div>
-              <div className="stat-icon"><TriangleAlert size={18} color="var(--high)" /></div>
-            </div>
-            <div className="stat-value">{stats.high}</div>
-          </div>
-          <div className="widget">
-            <div className="stat-header">
-              <div className="stat-label">Low Risk</div>
-              <div className="stat-icon"><Info size={18} color="var(--low)" /></div>
-            </div>
-            <div className="stat-value">{stats.low}</div>
-          </div>
-          <div className="widget">
-            <div className="stat-header">
-              <div className="stat-label">Safe</div>
-              <div className="stat-icon"><ShieldCheck size={18} color="var(--safe)" /></div>
-            </div>
-            <div className="stat-value">{stats.safe}</div>
-          </div>
-        </div>
 
-        {/* Fleet Table */}
-        <div className="fleet-section">
-          <div className="table-wrap">
-            <table className="machine-table">
-              <thead>
-                <tr>
-                  <th></th>
-                  <th className="sortable" onClick={() => toggleSort('hostname')}>
-                    Hostname {sortField === 'hostname' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
-                  </th>
-                  <th>IP Address</th>
-                  <th>OS</th>
-                  <th className="sortable" onClick={() => toggleSort('last_risk_score')}>
-                    Risk Score {sortField === 'last_risk_score' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
-                  </th>
-                  <th>Risk Class</th>
-                  <th>Trend</th>
-                  <th className="sortable" onClick={() => toggleSort('last_seen')}>
-                    Last Seen {sortField === 'last_seen' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
-                  </th>
-                  <th>Status</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.length === 0 && (
-                  <tr><td colSpan={10} className="empty-row">
-                    No machines registered yet. Run R3P_Agent.exe on a Windows machine and point it to this server.
-                  </td></tr>
-                )}
-                {sorted.map(m => {
-                  const live = liveData[m.hostname]
-                  const score = live?.risk_score ?? m.last_risk_score
-                  const cls = live?.risk_class ?? m.last_risk_class
-                  const trend = live?.trend
-                  const lastSeen = live?.timestamp || m.last_seen
-                  const offline = isStale(lastSeen)
-                  const hasAnomaly = live?.anomaly?.is_anomaly
-                  return (
-                    <tr key={m.hostname}
-                      className={`machine-row ${selected === m.hostname ? 'machine-row-active' : ''}`}
-                      onClick={() => setSelected(m.hostname)}>
-                      <td><span className={`row-dot ${offline ? 'offline' : 'online'}`} /></td>
-                      <td className="hostname-cell">
-                        <strong>{m.hostname}</strong>
-                        {hasAnomaly && <span className="anomaly-indicator" title="Anomaly detected"><TriangleAlert size={14} color="var(--critical)" style={{marginLeft: 8, verticalAlign: 'text-bottom'}} /></span>}
-                      </td>
-                      <td className="muted">{m.ip_address}</td>
-                      <td className="muted os-cell">{m.os_version || '—'}</td>
-                      <td>
-                        <div className="score-bar-wrap">
-                          <span className="score-num-sm">{score}</span>
-                          <div className="score-bar-bg">
-                            <div className={`score-bar-fill ${RISK_CLASS_COLOR[cls] || ''}`}
-                              style={{ width: `${score}%` }} />
-                          </div>
-                        </div>
-                      </td>
-                      <td><span className={`risk-badge-sm ${RISK_CLASS_COLOR[cls] || ''}`}>{cls}</span></td>
-                      <td>
-                        {trend === 'up' ? <span className="trend-arrow trend-up"><TrendingUp size={16} /></span>
-                          : trend === 'down' ? <span className="trend-arrow trend-down"><TrendingDown size={16} /></span>
-                            : <span className="trend-arrow trend-stable"><Minus size={16} /></span>}
-                      </td>
-                      <td className="muted">{timeSince(lastSeen)}</td>
-                      <td><span className={offline ? 'offline-text' : 'online-text'}>{offline ? 'Offline' : 'Online'}</span></td>
-                      <td>
-                        <button id={`details-btn-${m.hostname}`} className="btn btn-ghost btn-sm"
-                          onClick={e => { e.stopPropagation(); setSelected(m.hostname) }}>
-                          Details →
-                        </button>
-                      </td>
+            {/* Fleet Table */}
+            <div className="fleet-section">
+              <div className="table-wrap">
+                <table className="machine-table">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th className="sortable" onClick={() => toggleSort('hostname')}>
+                        Hostname {sortField === 'hostname' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                      </th>
+                      <th>IP Address</th>
+                      <th>OS</th>
+                      <th className="sortable" onClick={() => toggleSort('last_risk_score')}>
+                        Risk Score {sortField === 'last_risk_score' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                      </th>
+                      <th>Risk Class</th>
+                      <th>Trend</th>
+                      <th className="sortable" onClick={() => toggleSort('last_seen')}>
+                        Last Seen {sortField === 'last_seen' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                      </th>
+                      <th>Status</th>
+                      <th></th>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  </thead>
+                  <tbody>
+                    {sorted.length === 0 && (
+                      <tr><td colSpan={10} className="empty-row">
+                        No machines registered yet. Run R3P_Agent.exe on a Windows machine and point it to this server.
+                      </td></tr>
+                    )}
+                    {sorted.map(m => {
+                      const live = liveData[m.hostname]
+                      const score = live?.risk_score ?? m.last_risk_score
+                      const cls = live?.risk_class ?? m.last_risk_class
+                      const trend = live?.trend
+                      const lastSeen = live?.timestamp || m.last_seen
+                      const offline = isStale(lastSeen)
+                      const hasAnomaly = live?.anomaly?.is_anomaly
+                      return (
+                        <tr key={m.hostname}
+                          className={`machine-row ${selected === m.hostname ? 'machine-row-active' : ''}`}
+                          onClick={() => setSelected(m.hostname)}>
+                          <td><span className={`row-dot ${offline ? 'offline' : 'online'}`} /></td>
+                          <td className="hostname-cell">
+                            <strong>{m.hostname}</strong>
+                            {hasAnomaly && <span className="anomaly-indicator" title="Anomaly detected"><TriangleAlert size={14} color="var(--critical)" style={{marginLeft: 8, verticalAlign: 'text-bottom'}} /></span>}
+                          </td>
+                          <td className="muted">{m.ip_address}</td>
+                          <td className="muted os-cell">{m.os_version || '—'}</td>
+                          <td>
+                            <div className="score-bar-wrap">
+                              <span className="score-num-sm">{score}</span>
+                              <div className="score-bar-bg">
+                                <div className={`score-bar-fill ${RISK_CLASS_COLOR[cls] || ''}`}
+                                  style={{ width: `${score}%` }} />
+                              </div>
+                            </div>
+                          </td>
+                          <td><span className={`risk-badge-sm ${RISK_CLASS_COLOR[cls] || ''}`}>{cls}</span></td>
+                          <td>
+                            {trend === 'up' ? <span className="trend-arrow trend-up"><TrendingUp size={16} /></span>
+                              : trend === 'down' ? <span className="trend-arrow trend-down"><TrendingDown size={16} /></span>
+                                : <span className="trend-arrow trend-stable"><Minus size={16} /></span>}
+                          </td>
+                          <td className="muted">{timeSince(lastSeen)}</td>
+                          <td><span className={offline ? 'offline-text' : 'online-text'}>{offline ? 'Offline' : 'Online'}</span></td>
+                          <td>
+                            <button id={`details-btn-${m.hostname}`} className="btn btn-ghost btn-sm"
+                              onClick={e => { e.stopPropagation(); setSelected(m.hostname) }}>
+                              Details →
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
       </main>
 
       {selected && selectedMachine && (

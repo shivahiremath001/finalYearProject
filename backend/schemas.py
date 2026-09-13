@@ -47,6 +47,10 @@ class CollectorData(BaseModel):
     guest_account_active:     Optional[bool] = False
     vss_deleted:              Optional[bool] = False
     bitlocker_off:            Optional[bool] = False
+    wdigest_enabled:          Optional[bool] = False
+    laps_absent:              Optional[bool] = False
+    nla_disabled:             Optional[bool] = False
+    always_install_elevated:  Optional[bool] = False
 
 
 class IngestRequest(BaseModel):
@@ -176,6 +180,21 @@ class CommandHistoryOut(BaseModel):
     output:       Optional[str]
     issued_by:    str
     reboot_required: bool
+    model_config = {"from_attributes": True}
+
+
+class PolicyExceptionCreate(BaseModel):
+    hostname: str
+    param_key: str
+    reason: Optional[str] = None
+
+
+class PolicyExceptionOut(BaseModel):
+    id: int
+    hostname: str
+    param_key: str
+    reason: Optional[str] = None
+    created_at: datetime
     model_config = {"from_attributes": True}
 
 

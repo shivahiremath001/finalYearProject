@@ -17,10 +17,10 @@ the result is escalated to at least "HIGH RISK" regardless of the total score.
 from schemas import CollectorData
 
 PHASES = {
-    "Entry Vector": ["smb_v1_enabled", "rdp_enabled", "autorun_enabled", "open_network_shares"],
-    "Execution": ["macro_execution_enabled", "powershell_unrestricted", "uac_disabled", "applocker_absent"],
+    "Entry Vector": ["smb_v1_enabled", "rdp_enabled", "autorun_enabled", "open_network_shares", "nla_disabled"],
+    "Execution": ["macro_execution_enabled", "powershell_unrestricted", "uac_disabled", "applocker_absent", "always_install_elevated"],
     "Evasion & Persistence": ["defender_disabled", "firewall_disabled", "tamper_protection_off", "event_logging_disabled"],
-    "Lateral Movement": ["admin_shares_enabled", "lsass_protection_off", "guest_account_active"],
+    "Lateral Movement": ["admin_shares_enabled", "lsass_protection_off", "guest_account_active", "wdigest_enabled", "laps_absent"],
     "Recovery Prevention": ["vss_deleted", "backup_absent", "bitlocker_off"]
 }
 
@@ -53,6 +53,12 @@ PARAM_WEIGHTS: dict[str, float] = {
     "vss_deleted":              5.0,  # Critical
     "backup_absent":            5.0,  # Critical
     "bitlocker_off":            5.0,  # Critical
+
+    # New Fields
+    "nla_disabled":             4.0,  # High
+    "always_install_elevated":  5.0,  # Critical
+    "wdigest_enabled":          5.0,  # Critical
+    "laps_absent":              3.0,  # Medium
 }
 
 # ── MITRE ATT&CK Mapping ──────────────────────────────────────────────────────
@@ -157,6 +163,28 @@ MITRE_MAPPING: dict[str, dict[str, str]] = {
         "technique_name": "Data Encrypted for Impact",
         "tactic":         "Impact",
     },
+    
+    # New Fields
+    "nla_disabled": {
+        "technique_id":   "T1021.001",
+        "technique_name": "Remote Desktop Protocol",
+        "tactic":         "Lateral Movement",
+    },
+    "always_install_elevated": {
+        "technique_id":   "T1548.002",
+        "technique_name": "Bypass User Account Control",
+        "tactic":         "Privilege Escalation",
+    },
+    "wdigest_enabled": {
+        "technique_id":   "T1003.001",
+        "technique_name": "LSASS Memory (WDigest)",
+        "tactic":         "Credential Access",
+    },
+    "laps_absent": {
+        "technique_id":   "T1562",
+        "technique_name": "Impair Defenses",
+        "tactic":         "Defense Evasion",
+    },
 }
 
 
@@ -222,6 +250,12 @@ def _translate(data: CollectorData) -> dict[str, bool]:
         "vss_deleted":             data.vss_deleted,
         "backup_absent":           not data.backup_configured,  # invert backup_configured
         "bitlocker_off":           data.bitlocker_off,
+        
+        # New Fields
+        "nla_disabled":            data.nla_disabled,
+        "always_install_elevated": data.always_install_elevated,
+        "wdigest_enabled":         data.wdigest_enabled,
+        "laps_absent":             data.laps_absent,
     }
 
 

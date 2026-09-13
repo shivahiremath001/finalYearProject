@@ -24,6 +24,7 @@ import sys
 import os
 import threading
 import time
+import concurrent.futures
 from datetime import datetime
 import tkinter as tk
 from tkinter import ttk
@@ -50,7 +51,11 @@ ABOUT_INFO = {
     "admin_shares_enabled": ("Admin Shares Enabled", "Default hidden admin shares (C$, ADMIN$) are frequently used by ransomware to move laterally across the network."),
     "vss_deleted": ("Volume Shadow Copies Deleted", "Ransomware deletes Volume Shadow Copies to prevent you from easily restoring encrypted files."),
     "backup_configured": ("Backup Not Configured", "Without a working backup service, recovery after a ransomware encryption event is nearly impossible."),
-    "bitlocker_off": ("BitLocker Encryption Off", "Without full disk encryption, physical theft or unauthorized access can easily compromise all stored data.")
+    "bitlocker_off": ("BitLocker Encryption Off", "Without full disk encryption, physical theft or unauthorized access can easily compromise all stored data."),
+    "wdigest_enabled": ("WDigest Credentials Enabled", "WDigest stores passwords in clear text in LSASS memory, allowing for easy credential dumping."),
+    "laps_absent": ("LAPS Absent", "Without Microsoft LAPS, local admin passwords are often shared, enabling Pass-the-Hash lateral movement."),
+    "nla_disabled": ("RDP NLA Disabled", "Without Network Level Authentication, RDP is vulnerable to pre-authentication attacks and DoS."),
+    "always_install_elevated": ("AlwaysInstallElevated Enabled", "This policy allows any standard user to install MSI packages with SYSTEM privileges, a massive escalation vector.")
 }
 
 try:
@@ -151,6 +156,23 @@ AGENT_REMEDIATION = {
         "-Name 'RunAsPPL' -Value 1 -Type DWord; "
         "Write-Output 'LSASS PPL protection enabled.'"
     ),
+    "disable_wdigest": (
+        "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' "
+        "-Name 'UseLogonCredential' -Value 0 -Type DWord; "
+        "Write-Output 'WDigest UseLogonCredential disabled.'"
+    ),
+    "enable_nla": (
+        "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' "
+        "-Name 'UserAuthentication' -Value 1 -Type DWord; "
+        "Write-Output 'NLA enabled for RDP.'"
+    ),
+    "disable_always_install_elevated": (
+        "Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' "
+        "-Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; "
+        "Remove-ItemProperty -Path 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' "
+        "-Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; "
+        "Write-Output 'AlwaysInstallElevated disabled.'"
+    ),
 }
 
 PARAM_TO_CMD_KEY = {
@@ -164,7 +186,10 @@ PARAM_TO_CMD_KEY = {
     "tamper_protection_off": "enable_tamper_protection",
     "event_logging_disabled": "enable_event_log",
     "guest_account_active": "disable_guest",
-    "lsass_protection_off": "enable_lsass_protection"
+    "lsass_protection_off": "enable_lsass_protection",
+    "wdigest_enabled": "disable_wdigest",
+    "nla_disabled": "enable_nla",
+    "always_install_elevated": "disable_always_install_elevated"
 }
 
 
@@ -410,6 +435,35 @@ def check_applocker_absent() -> bool:
         return True
 
 
+def check_wdigest_enabled() -> bool:
+    out = _ps(
+        r"(Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest' "
+        r"-ErrorAction SilentlyContinue).UseLogonCredential"
+    )
+    return out.strip() == "1"
+
+
+def check_laps_absent() -> bool:
+    out = _ps(r"Get-Command -Module LAPS -ErrorAction SilentlyContinue")
+    return out.strip() == ""
+
+
+def check_nla_disabled() -> bool:
+    out = _ps(
+        r"(Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' "
+        r"-ErrorAction SilentlyContinue).UserAuthentication"
+    )
+    return out.strip() == "0"
+
+
+def check_always_install_elevated() -> bool:
+    out = _ps(
+        r"(Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' "
+        r"-ErrorAction SilentlyContinue).AlwaysInstallElevated"
+    )
+    return out.strip() == "1"
+
+
 # ── CHECK MANIFEST ─────────────────────────────────────────────────────────────
 CHECKS = [
     ("rdp_open",                 "Checking RDP port 3389...",              check_rdp_open),
@@ -430,18 +484,30 @@ CHECKS = [
     ("vss_deleted",              "Checking Volume Shadow Copies...",       check_vss_deleted),
     ("backup_configured",        "Checking backup service...",             check_backup_configured),
     ("bitlocker_off",            "Checking BitLocker encryption...",       check_bitlocker_off),
+    ("wdigest_enabled",          "Checking WDigest credentials...",        check_wdigest_enabled),
+    ("laps_absent",              "Checking LAPS installation...",          check_laps_absent),
+    ("nla_disabled",             "Checking RDP NLA...",                    check_nla_disabled),
+    ("always_install_elevated",  "Checking AlwaysInstallElevated...",      check_always_install_elevated),
 ]
 
 
 def run_all_checks(status_cb=None) -> dict:
     results = {}
-    for key, label, fn in CHECKS:
+    
+    def _run_check(key, label, fn):
         if status_cb:
             status_cb(label)
         try:
-            results[key] = fn()
+            return key, fn()
         except Exception:
-            results[key] = False
+            return key, False
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(_run_check, key, label, fn) for key, label, fn in CHECKS]
+        for future in concurrent.futures.as_completed(futures):
+            k, v = future.result()
+            results[k] = v
+            
     return results
 
 

@@ -27,7 +27,7 @@ from database import SessionLocal
 import models
 
 # ── Config ────────────────────────────────────────────────────────────────────
-SECRET_KEY = os.environ.get("JWT_SECRET", "r3p-change-this-in-production-" + secrets.token_hex(8))
+SECRET_KEY = os.environ.get("JWT_SECRET", "r3p-dev-secret-key-1234567890")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("TOKEN_EXPIRE_MINUTES", "480"))  # 8 hours
 

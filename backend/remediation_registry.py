@@ -211,6 +211,59 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": True,
     },
+    
+    "disable_wdigest": {
+        "label": "Disable WDigest Cleartext Credentials",
+        "description": (
+            "WDigest stores credentials in clear text in LSASS memory, making them easily retrievable by attackers. "
+            "Disabling it prevents cleartext credential dumping."
+        ),
+        "phase": "Lateral Movement",
+        "severity": "CRITICAL",
+        "param_key": "wdigest_enabled",
+        "powershell": (
+            "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' "
+            "-Name 'UseLogonCredential' -Value 0 -Type DWord; "
+            "Write-Output 'WDigest UseLogonCredential disabled.'"
+        ),
+        "reboot_required": False,
+    },
+    
+    "enable_nla": {
+        "label": "Enable Network Level Authentication for RDP",
+        "description": (
+            "Without NLA, RDP connections establish a full session before authentication, "
+            "exposing the server to DoS and pre-authentication vulnerabilities."
+        ),
+        "phase": "Entry Vector",
+        "severity": "HIGH",
+        "param_key": "nla_disabled",
+        "powershell": (
+            "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' "
+            "-Name 'UserAuthentication' -Value 1 -Type DWord; "
+            "Write-Output 'NLA enabled for RDP.'"
+        ),
+        "reboot_required": False,
+    },
+    
+    "disable_always_install_elevated": {
+        "label": "Disable AlwaysInstallElevated Policy",
+        "description": (
+            "This policy allows standard users to install MSI packages with SYSTEM privileges. "
+            "It is a major privilege escalation vector."
+        ),
+        "phase": "Execution",
+        "severity": "CRITICAL",
+        "param_key": "always_install_elevated",
+        "powershell": (
+            "Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' "
+            "-Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; "
+            "Remove-ItemProperty -Path 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' "
+            "-Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; "
+            "Write-Output 'AlwaysInstallElevated disabled.'"
+        ),
+        "reboot_required": False,
+    },
 }
 
 
