@@ -19,13 +19,14 @@ from schemas import CollectorData
 PHASES = {
     "Entry Vector": ["smb_v1_enabled", "rdp_enabled", "autorun_enabled", "open_network_shares", "nla_disabled"],
     "Execution": ["macro_execution_enabled", "powershell_unrestricted", "uac_disabled", "applocker_absent", "always_install_elevated"],
-    "Evasion & Persistence": ["defender_disabled", "firewall_disabled", "tamper_protection_off", "event_logging_disabled"],
+    "Evasion & Persistence": ["defender_disabled", "firewall_disabled", "tamper_protection_off", "event_logging_disabled", "vulnerable_driver_blocklist_enabled", "hvci_enabled", "asr_rules_configured"],
     "Lateral Movement": ["admin_shares_enabled", "lsass_protection_off", "guest_account_active", "wdigest_enabled", "laps_absent"],
-    "Recovery Prevention": ["vss_deleted", "backup_absent", "bitlocker_off"]
+    "Recovery Prevention": ["vss_deleted", "backup_absent", "bitlocker_off"],
+    "Active Validation (Mock Attacks)": ["mock_attack_vss_enum_succeeded", "mock_attack_mass_rename_succeeded"]
 }
 
-# ── Parameter weights (name → severity weight 1-5) ─────────────
-PARAM_WEIGHTS: dict[str, float] = {
+# ── Severity weights (name → severity weight 1-5) ─────────────
+SEVERITY_WEIGHTS: dict[str, float] = {
     # Entry Vector
     "smb_v1_enabled":           5.0,  # Critical
     "rdp_enabled":              4.0,  # High
@@ -59,6 +60,57 @@ PARAM_WEIGHTS: dict[str, float] = {
     "always_install_elevated":  5.0,  # Critical
     "wdigest_enabled":          5.0,  # Critical
     "laps_absent":              3.0,  # Medium
+    "vulnerable_driver_blocklist_enabled": 5.0,  # Critical (if not enabled)
+    "hvci_enabled":             4.0,  # High (if not enabled)
+    "asr_rules_configured":     4.0,  # High (if not configured)
+
+    # Phase 3 Active Validation
+    "mock_attack_vss_enum_succeeded": 5.0,     # Critical (if not blocked)
+    "mock_attack_mass_rename_succeeded": 5.0,  # Critical (if not blocked)
+}
+
+# ── Likelihood weights (name → likelihood 0.1-1.0 based on real-world frequency) ─────────────
+LIKELIHOOD_WEIGHTS: dict[str, float] = {
+    # Entry Vector
+    "smb_v1_enabled":           0.4,  # Lower likelihood today
+    "rdp_enabled":              0.9,  # Very high (dominant initial access)
+    "autorun_enabled":          0.3,
+    "open_network_shares":      0.7,
+
+    # Execution
+    "macro_execution_enabled":  0.8,
+    "powershell_unrestricted":  1.0,  # Ubiquitous in ransomware execution
+    "uac_disabled":             0.6,
+    "applocker_absent":         0.5,
+
+    # Evasion/Persistence
+    "defender_disabled":        0.9,
+    "firewall_disabled":        0.6,
+    "tamper_protection_off":    0.8,
+    "event_logging_disabled":   0.7,
+
+    # Lateral Movement
+    "admin_shares_enabled":     0.8,
+    "lsass_protection_off":     0.9,  # Mimikatz is extremely common
+    "guest_account_active":     0.4,
+
+    # Recovery Prevention
+    "vss_deleted":              1.0,  # Literally every ransomware does this
+    "backup_absent":            0.8,
+    "bitlocker_off":            0.5,
+
+    # New Fields
+    "nla_disabled":             0.8,
+    "always_install_elevated":  0.6,
+    "wdigest_enabled":          0.7,
+    "laps_absent":              0.8,
+    "vulnerable_driver_blocklist_enabled": 0.9,  # Very high (BYOVD is dominant)
+    "hvci_enabled":             0.8,
+    "asr_rules_configured":     0.8,
+
+    # Phase 3 Active Validation
+    "mock_attack_vss_enum_succeeded": 1.0,     # If it succeeded, defense absolutely failed
+    "mock_attack_mass_rename_succeeded": 1.0,  # If it succeeded, defense absolutely failed
 }
 
 # ── MITRE ATT&CK Mapping ──────────────────────────────────────────────────────
@@ -185,6 +237,33 @@ MITRE_MAPPING: dict[str, dict[str, str]] = {
         "technique_name": "Impair Defenses",
         "tactic":         "Defense Evasion",
     },
+    "vulnerable_driver_blocklist_enabled": {
+        "technique_id":   "T1068",
+        "technique_name": "Exploitation for Privilege Escalation (BYOVD)",
+        "tactic":         "Privilege Escalation",
+    },
+    "hvci_enabled": {
+        "technique_id":   "T1562.001",
+        "technique_name": "Disable or Modify Tools",
+        "tactic":         "Defense Evasion",
+    },
+    "asr_rules_configured": {
+        "technique_id":   "T1562.001",
+        "technique_name": "Disable or Modify Tools",
+        "tactic":         "Defense Evasion",
+    },
+    
+    # Phase 3 Active Validation
+    "mock_attack_vss_enum_succeeded": {
+        "technique_id":   "T1490",
+        "technique_name": "Inhibit System Recovery (Mock Attack)",
+        "tactic":         "Impact",
+    },
+    "mock_attack_mass_rename_succeeded": {
+        "technique_id":   "T1486",
+        "technique_name": "Data Encrypted for Impact (Mock Attack)",
+        "tactic":         "Impact",
+    },
 }
 
 
@@ -256,28 +335,60 @@ def _translate(data: CollectorData) -> dict[str, bool]:
         "always_install_elevated": data.always_install_elevated,
         "wdigest_enabled":         data.wdigest_enabled,
         "laps_absent":             data.laps_absent,
+
+        # Phase 2 Fields (invert since True in DB means RISKY)
+        "vulnerable_driver_blocklist_enabled": not data.vulnerable_driver_blocklist_enabled if hasattr(data, 'vulnerable_driver_blocklist_enabled') else False,
+        "hvci_enabled":            not data.hvci_enabled if hasattr(data, 'hvci_enabled') else False,
+        "asr_rules_configured":    not data.asr_rules_configured if hasattr(data, 'asr_rules_configured') else False,
+
+        # Phase 3 Active Validation
+        # If the mock attack was NOT blocked (i.e. blocked is False), it is a RISKY state.
+        # If it's None, it didn't run, so it's not a failure.
+        "mock_attack_vss_enum_succeeded": getattr(data, 'mock_attack_vss_enum_blocked', None) is False,
+        "mock_attack_mass_rename_succeeded": getattr(data, 'mock_attack_mass_rename_blocked', None) is False,
     }
 
 
-def score(data: CollectorData) -> tuple[float, str, dict[str, list[str]], list[dict]]:
+def get_asset_criticality(asset_type: str) -> float:
+    """Map asset type to a criticality multiplier."""
+    t = asset_type.lower() if asset_type else "workstation"
+    if t == "domain controller":
+        return 1.6
+    elif t == "server":
+        return 1.3
+    else:
+        return 1.0
+
+
+def score(data: CollectorData, asset_type: str = "Workstation") -> tuple[float, str, dict[str, list[str]], list[dict], float]:
     """
     Returns:
         risk_score   (0.0 – 100.0)
         risk_class   ("SAFE" | "LOW RISK" | "HIGH RISK" | "CRITICAL")
         flagged      dict mapping phase name to list of flagged parameter names
         mitre_hits   list of MITRE ATT&CK hits for flagged parameters
+        criticality  the computed asset criticality multiplier
     """
     params = _translate(data)
-    total_weight = 0.0
-    max_weight = sum(PARAM_WEIGHTS.values())
+    asset_criticality = get_asset_criticality(asset_type)
+    
+    total_risk = 0.0
     has_critical_failure = False
     flagged: dict[str, list[str]] = {phase: [] for phase in PHASES}
 
+    # Max possible risk if everything fails
+    max_possible_risk = sum(SEVERITY_WEIGHTS.get(k, 0) * LIKELIHOOD_WEIGHTS.get(k, 0) for k in SEVERITY_WEIGHTS) * asset_criticality
+
     for param, is_risky in params.items():
         if is_risky:
-            weight = PARAM_WEIGHTS.get(param, 0.0)
-            total_weight += weight
-            if weight == 5.0:
+            severity = SEVERITY_WEIGHTS.get(param, 0.0)
+            likelihood = LIKELIHOOD_WEIGHTS.get(param, 0.0)
+            
+            # Formula: Risk = Severity * Likelihood * AssetCriticality
+            item_risk = severity * likelihood * asset_criticality
+            total_risk += item_risk
+            
+            if severity == 5.0:
                 has_critical_failure = True
             for phase, p_list in PHASES.items():
                 if param in p_list:
@@ -288,14 +399,14 @@ def score(data: CollectorData) -> tuple[float, str, dict[str, list[str]], list[d
     flagged = {k: v for k, v in flagged.items() if v}
 
     # Normalize to 0-100 scale
-    total = (total_weight / max_weight) * 100.0 if max_weight > 0 else 0.0
-    total = min(total, 100.0)
+    normalized_score = (total_risk / max_possible_risk) * 100.0 if max_possible_risk > 0 else 0.0
+    normalized_score = min(normalized_score, 100.0)
 
-    if total < 20:
+    if normalized_score < 20:
         risk_class = "SAFE"
-    elif total < 50:
+    elif normalized_score < 50:
         risk_class = "LOW RISK"
-    elif total < 80:
+    elif normalized_score < 80:
         risk_class = "HIGH RISK"
     else:
         risk_class = "CRITICAL"
@@ -307,4 +418,4 @@ def score(data: CollectorData) -> tuple[float, str, dict[str, list[str]], list[d
     # Generate MITRE ATT&CK hits for flagged parameters
     mitre_hits = get_mitre_hits(flagged)
 
-    return round(total, 2), risk_class, flagged, mitre_hits
+    return round(normalized_score, 2), risk_class, flagged, mitre_hits, asset_criticality

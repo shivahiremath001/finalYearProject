@@ -124,6 +124,11 @@ export default function PoliciesView({ token }) {
                   <option value="laps_absent">LAPS Absent</option>
                   <option value="nla_disabled">RDP NLA Disabled</option>
                   <option value="always_install_elevated">AlwaysInstallElevated Enabled</option>
+                  <option value="vulnerable_driver_blocklist_enabled">Vulnerable Driver Blocklist Disabled (BYOVD Risk)</option>
+                  <option value="hvci_enabled">HVCI Memory Integrity Disabled</option>
+                  <option value="asr_rules_configured">ASR Rules Not Configured</option>
+                  <option value="mock_attack_vss_enum_succeeded">Failed Mock Attack: VSS Enumeration (Ransomware Behavior)</option>
+                  <option value="mock_attack_mass_rename_succeeded">Failed Mock Attack: Mass File Rename (Ransomware Behavior)</option>
                 </select>
               </div>
               <div className="field">

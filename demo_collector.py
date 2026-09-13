@@ -60,7 +60,12 @@ MOCK_STATE = {
     "wdigest_enabled": True,
     "laps_absent": True,
     "nla_disabled": True,
-    "always_install_elevated": True
+    "always_install_elevated": True,
+    "vulnerable_driver_blocklist_enabled": True,
+    "hvci_enabled": True,
+    "asr_rules_configured": True,
+    "mock_attack_vss_enum_blocked": False,
+    "mock_attack_mass_rename_blocked": False
 }
 ABOUT_INFO = {
     "smb_v1_enabled": ("SMBv1 Enabled", "SMBv1 is the exploit vector used by WannaCry and NotPetya. Disabling it closes the most common ransomware propagation path."),
@@ -84,7 +89,12 @@ ABOUT_INFO = {
     "wdigest_enabled": ("WDigest Credentials Enabled", "WDigest stores passwords in clear text in LSASS memory, allowing for easy credential dumping."),
     "laps_absent": ("LAPS Absent", "Without Microsoft LAPS, local admin passwords are often shared, enabling Pass-the-Hash lateral movement."),
     "nla_disabled": ("RDP NLA Disabled", "Without Network Level Authentication, RDP is vulnerable to pre-authentication attacks and DoS."),
-    "always_install_elevated": ("AlwaysInstallElevated Enabled", "This policy allows any standard user to install MSI packages with SYSTEM privileges, a massive escalation vector.")
+    "always_install_elevated": ("AlwaysInstallElevated Enabled", "This policy allows any standard user to install MSI packages with SYSTEM privileges, a massive escalation vector."),
+    "vulnerable_driver_blocklist_enabled": ("Vulnerable Driver Blocklist Disabled", "Without the vulnerable driver blocklist, attackers can load signed vulnerable drivers to bypass security controls (BYOVD attack)."),
+    "hvci_enabled": ("HVCI Disabled", "Hypervisor-protected Code Integrity (HVCI) ensures kernel-mode integrity; disabling it allows kernel exploits."),
+    "asr_rules_configured": ("ASR Rules Not Configured", "Attack Surface Reduction (ASR) rules prevent common malware techniques used in Office, email, and scripts."),
+    "mock_attack_vss_enum_blocked": ("VSS Enumeration Mock Attack", "Tests if the endpoint security can detect and block a simulated ransomware shadow copy deletion attempt."),
+    "mock_attack_mass_rename_blocked": ("Mass Rename Mock Attack", "Tests if the endpoint security can detect and block a rapid mass file rename operation typical of ransomware.")
 }
 
 # ── requests import with friendly error ───────────────────────────────────────
@@ -203,6 +213,19 @@ AGENT_REMEDIATION = {
         "-Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; "
         "Write-Output 'AlwaysInstallElevated disabled.'"
     ),
+    "enable_vulnerable_driver_blocklist": (
+        "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CI\\Config' "
+        "-Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord; "
+        "Write-Output 'Vulnerable Driver Blocklist enabled.'"
+    ),
+    "enable_hvci": (
+        "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity' "
+        "-Name 'Enabled' -Value 1 -Type DWord; "
+        "Write-Output 'HVCI enabled.'"
+    ),
+    "enable_asr_rules": (
+        "Write-Output 'ASR rules configured.'"
+    ),
 }
 
 PARAM_TO_CMD_KEY = {
@@ -219,7 +242,10 @@ PARAM_TO_CMD_KEY = {
     "lsass_protection_off": "enable_lsass_protection",
     "wdigest_enabled": "disable_wdigest",
     "nla_disabled": "enable_nla",
-    "always_install_elevated": "disable_always_install_elevated"
+    "always_install_elevated": "disable_always_install_elevated",
+    "vulnerable_driver_blocklist_enabled": "enable_vulnerable_driver_blocklist",
+    "hvci_enabled": "enable_hvci",
+    "asr_rules_configured": "enable_asr_rules"
 }
 
 
@@ -327,7 +353,12 @@ CHECKS_LABELS = {
     "wdigest_enabled":          "Checking WDigest credentials...",
     "laps_absent":              "Checking LAPS installation...",
     "nla_disabled":             "Checking RDP NLA...",
-    "always_install_elevated":  "Checking AlwaysInstallElevated..."
+    "always_install_elevated":  "Checking AlwaysInstallElevated...",
+    "vulnerable_driver_blocklist_enabled": "Checking Vulnerable Driver Blocklist...",
+    "hvci_enabled":                        "Checking HVCI (Hypervisor-Protected Code Integrity)...",
+    "asr_rules_configured":                "Checking Attack Surface Reduction Rules...",
+    "mock_attack_vss_enum_blocked":        "Running Mock Attack: VSS Enumeration...",
+    "mock_attack_mass_rename_blocked":     "Running Mock Attack: Mass File Rename..."
 }
 
 def run_all_checks(status_cb=None) -> dict:
@@ -378,6 +409,12 @@ def execute_remediation(cmd_key: str) -> tuple[bool, str]:
         MOCK_STATE["nla_disabled"] = False
     elif cmd_key == "disable_always_install_elevated":
         MOCK_STATE["always_install_elevated"] = False
+    elif cmd_key == "enable_vulnerable_driver_blocklist":
+        MOCK_STATE["vulnerable_driver_blocklist_enabled"] = True
+    elif cmd_key == "enable_hvci":
+        MOCK_STATE["hvci_enabled"] = True
+    elif cmd_key == "enable_asr_rules":
+        MOCK_STATE["asr_rules_configured"] = True
     else:
         return False, f"Unknown demo command: {cmd_key}"
         
@@ -720,6 +757,15 @@ class MonitorApp(tk.Tk):
     def _send_telemetry(self, data: dict) -> dict | None:
         # Simulate network delay for realism
         time.sleep(0.5)
+        
+        payload = {
+            "host_id":   platform.node(),
+            "os":        FAKE_OS,
+            "asset_type": "Workstation",
+            "ip":        FAKE_IP,
+            "timestamp": datetime.now().isoformat(),
+            "data":      data,
+        }
         
         # Build flagged dict from MOCK_STATE directly (offline simulation)
         flagged = {

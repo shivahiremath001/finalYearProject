@@ -18,6 +18,7 @@ class MachineRegistry(Base):
     last_seen = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
     last_risk_score = Column(Float, default=0.0)
     last_risk_class = Column(String, default="UNKNOWN")
+    asset_criticality = Column(Float, default=1.0)
     anomaly_streak = Column(Integer, default=0)              # Consecutive anomaly count
 
 
@@ -69,10 +70,20 @@ class ConfigurationScan(Base):
     nla_disabled = Column(Boolean, default=False)
     always_install_elevated = Column(Boolean, default=False)
 
+    # ── PHASE 2 BYOVD & EDR-KILLER CHECKS ────────────────────────────────────
+    vulnerable_driver_blocklist_enabled = Column(Boolean, default=False)
+    hvci_enabled = Column(Boolean, default=False)
+    asr_rules_configured = Column(Boolean, default=False)
+
+    # ── PHASE 3 ACTIVE VALIDATION (MOCK ATTACKS) ──────────────────────────────
+    mock_attack_vss_enum_blocked = Column(Boolean, nullable=True)
+    mock_attack_mass_rename_blocked = Column(Boolean, nullable=True)
+
     # ── RISK RESULT ──────────────────────────────────────────────────────────
     risk_score = Column(Float, default=0.0)
     risk_class = Column(String, default="SAFE")              # SAFE | LOW RISK | HIGH RISK | CRITICAL
     flagged_parameters = Column(String, default="")          # Comma-separated list of flagged params
+    posture_diff = Column(Text, nullable=True)               # JSON string of changed parameters since last scan
     is_anomaly = Column(Boolean, default=False)              # Z-score anomaly flag
     anomaly_z_score = Column(Float, nullable=True)           # Z-score value at scan time
     prev_risk_score = Column(Float, nullable=True)           # Previous scan score (for trend arrow)

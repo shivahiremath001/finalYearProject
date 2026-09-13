@@ -264,6 +264,58 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
+
+    # ── Phase 2 BYOVD & EDR-Killer Fixes ──────────────────────────────────────
+
+    "enable_vulnerable_driver_blocklist": {
+        "label": "Enable Microsoft Vulnerable Driver Blocklist",
+        "description": (
+            "Prevents attackers from loading known vulnerable drivers to bypass or kill EDR solutions (BYOVD attacks). "
+            "This is a critical defense against modern ransomware."
+        ),
+        "phase": "Evasion & Persistence",
+        "severity": "CRITICAL",
+        "param_key": "vulnerable_driver_blocklist_enabled",
+        "powershell": (
+            "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CI\\Config' "
+            "-Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord; "
+            "Write-Output 'Vulnerable Driver Blocklist enabled. Reboot required.'"
+        ),
+        "reboot_required": True,
+    },
+
+    "enable_hvci": {
+        "label": "Enable HVCI (Memory Integrity)",
+        "description": (
+            "Hypervisor-Enforced Code Integrity (HVCI) prevents attackers from executing malicious code "
+            "in the Windows kernel, neutralizing many BYOVD tools."
+        ),
+        "phase": "Evasion & Persistence",
+        "severity": "HIGH",
+        "param_key": "hvci_enabled",
+        "powershell": (
+            "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity' "
+            "-Name 'Enabled' -Value 1 -Type DWord; "
+            "Write-Output 'HVCI Memory Integrity enabled. Reboot required.'"
+        ),
+        "reboot_required": True,
+    },
+
+    "enable_asr_rules": {
+        "label": "Enable Basic ASR Rules (Block Office Macros/Executables)",
+        "description": (
+            "Attack Surface Reduction (ASR) rules block common attack techniques. "
+            "This command enables standard ASR rules to block Office apps from creating child processes."
+        ),
+        "phase": "Evasion & Persistence",
+        "severity": "HIGH",
+        "param_key": "asr_rules_configured",
+        "powershell": (
+            "Add-MpPreference -AttackSurfaceReductionRules_Ids 'd4f940ab-401b-4efc-aadc-ad5f3c50688a' -AttackSurfaceReductionRules_Actions Enabled; "
+            "Write-Output 'Basic ASR Rules enabled.'"
+        ),
+        "reboot_required": False,
+    },
 }
 
 

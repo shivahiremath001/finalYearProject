@@ -189,7 +189,10 @@ PARAM_TO_CMD_KEY = {
     "lsass_protection_off": "enable_lsass_protection",
     "wdigest_enabled": "disable_wdigest",
     "nla_disabled": "enable_nla",
-    "always_install_elevated": "disable_always_install_elevated"
+    "always_install_elevated": "disable_always_install_elevated",
+    "vulnerable_driver_blocklist_enabled": "enable_vulnerable_driver_blocklist",
+    "hvci_enabled": "enable_hvci",
+    "asr_rules_configured": "enable_asr_rules"
 }
 
 
@@ -218,6 +221,7 @@ def load_agent_config() -> dict:
         "scan_interval_seconds": 60,
         "command_poll_enabled": True,
         "auto_start_enabled": True,
+        "asset_type": "Workstation",
     }
     try:
         if os.path.exists(AGENT_CONFIG_FILE):
@@ -464,6 +468,91 @@ def check_always_install_elevated() -> bool:
     return out.strip() == "1"
 
 
+def check_vulnerable_driver_blocklist_enabled() -> bool:
+    out = _ps(
+        r"(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config' "
+        r"-ErrorAction SilentlyContinue).VulnerableDriverBlocklistEnable"
+    )
+    return out.strip() == "1"
+
+
+def check_hvci_enabled() -> bool:
+    out = _ps(
+        r"(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' "
+        r"-ErrorAction SilentlyContinue).Enabled"
+    )
+    return out.strip() == "1"
+
+
+def check_asr_rules_configured() -> bool:
+    out = _ps(
+        r"(Get-MpPreference -ErrorAction SilentlyContinue).AttackSurfaceReductionRules_Ids.Count"
+    )
+    try:
+        return int(out.strip()) > 0
+    except Exception:
+        return False
+
+
+# ── ACTIVE VALIDATION (MOCK ATTACKS) ───────────────────────────────────────────
+def run_mock_attack_vss_enum() -> bool:
+    """
+    Simulates ransomware looking for Shadow Copies to delete.
+    Returns True if BLOCKED (Safe), False if SUCCEEDED (Risky).
+    """
+    try:
+        out = _ps("Get-WmiObject Win32_ShadowCopy -ErrorAction Stop")
+        # If it throws an exception (e.g. access denied by ASR/EDR), it goes to except
+        # If it completes, it wasn't blocked.
+        return False
+    except Exception:
+        return True
+
+def run_mock_attack_mass_rename() -> bool:
+    """
+    Simulates ransomware rapidly renaming files to .locked.
+    Returns True if BLOCKED/KILLED (Safe), False if ALL 100 renamed (Risky).
+    """
+    import tempfile
+    import shutil
+    try:
+        temp_dir = os.path.join(tempfile.gettempdir(), "r3p_mock_attack")
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Drop dummy files
+        for i in range(100):
+            with open(os.path.join(temp_dir, f"dummy_{i}.txt"), "w") as f:
+                f.write("mock_data")
+                
+        script = f'''
+        $files = Get-ChildItem -Path "{temp_dir}" -Filter "*.txt"
+        foreach ($file in $files) {{
+            Rename-Item -Path $file.FullName -NewName ($file.Name + ".locked") -ErrorAction SilentlyContinue
+        }}
+        '''
+        
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+            capture_output=True, text=True, timeout=10, creationflags=flags
+        )
+        
+        # Verify
+        locked_files = [f for f in os.listdir(temp_dir) if f.endswith(".locked")]
+        
+        # Clean up
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        if r.returncode != 0 or len(locked_files) < 100:
+            return True # Blocked or interrupted
+        return False # Successfully renamed all 100 files (EDR failed to block)
+        
+    except Exception:
+        return True # Something blocked or crashed it
+
+
 # ── CHECK MANIFEST ─────────────────────────────────────────────────────────────
 CHECKS = [
     ("rdp_open",                 "Checking RDP port 3389...",              check_rdp_open),
@@ -488,6 +577,11 @@ CHECKS = [
     ("laps_absent",              "Checking LAPS installation...",          check_laps_absent),
     ("nla_disabled",             "Checking RDP NLA...",                    check_nla_disabled),
     ("always_install_elevated",  "Checking AlwaysInstallElevated...",      check_always_install_elevated),
+    ("vulnerable_driver_blocklist_enabled", "Checking BYOVD Blocklist...", check_vulnerable_driver_blocklist_enabled),
+    ("hvci_enabled",             "Checking HVCI Memory Integrity...",      check_hvci_enabled),
+    ("asr_rules_configured",     "Checking ASR Rules...",                  check_asr_rules_configured),
+    ("mock_attack_vss_enum_blocked",      "Running Mock Attack: VSS Enumeration...", run_mock_attack_vss_enum),
+    ("mock_attack_mass_rename_blocked",   "Running Mock Attack: Mass File Rename...", run_mock_attack_mass_rename),
 ]
 
 
@@ -876,6 +970,7 @@ class MonitorApp(tk.Tk):
         payload = {
             "host_id":   platform.node(),
             "os":        get_os_info(),
+            "asset_type": load_agent_config().get("asset_type", "Workstation"),
             "ip":        get_local_ip(),
             "timestamp": datetime.now().isoformat(),
             "data":      data,

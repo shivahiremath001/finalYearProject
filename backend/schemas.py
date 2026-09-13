@@ -52,11 +52,21 @@ class CollectorData(BaseModel):
     nla_disabled:             Optional[bool] = False
     always_install_elevated:  Optional[bool] = False
 
+    # ── Phase 2 BYOVD/EDR-Killer checks ──────────────────────────────────────
+    vulnerable_driver_blocklist_enabled: Optional[bool] = False
+    hvci_enabled:             Optional[bool] = False
+    asr_rules_configured:     Optional[bool] = False
+
+    # ── Phase 3 Active Validation (Mock Attacks) ─────────────────────────────
+    mock_attack_vss_enum_blocked: Optional[bool] = None
+    mock_attack_mass_rename_blocked: Optional[bool] = None
+
 
 class IngestRequest(BaseModel):
     """Top-level payload that collector.py POSTs to /ingest"""
     host_id:   str
     os:        str
+    asset_type: Optional[str] = "Workstation"
     timestamp: Optional[str] = None
     ip:        Optional[str] = None   # auto-filled by server if not present
     data:      CollectorData
@@ -98,6 +108,7 @@ class MachineOut(BaseModel):
     hostname:        str
     ip_address:      str
     os_version:      Optional[str]
+    asset_criticality: Optional[float] = 1.0
     first_seen:      Optional[datetime]
     last_seen:       Optional[datetime]
     last_risk_score: float
@@ -115,6 +126,7 @@ class ScanOut(BaseModel):
     risk_score:       float
     risk_class:       str
     flagged_parameters: str
+    posture_diff:     Optional[str] = None
 
     model_config = {"from_attributes": True}
 

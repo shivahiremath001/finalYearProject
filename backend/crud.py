@@ -14,7 +14,7 @@ from remediation_registry import get_command
 
 
 def upsert_machine(db: Session, req: IngestRequest, ip: str,
-                   risk_score: float, risk_class: str) -> MachineRegistry:
+                   risk_score: float, risk_class: str, asset_criticality: float = 1.0) -> MachineRegistry:
     """Create or update the machine registry row for this host."""
     machine = db.query(MachineRegistry).filter_by(hostname=req.host_id).first()
     if machine is None:
@@ -30,6 +30,7 @@ def upsert_machine(db: Session, req: IngestRequest, ip: str,
     machine.os_version    = req.os
     machine.last_risk_score = risk_score
     machine.last_risk_class = risk_class
+    machine.asset_criticality = asset_criticality
     db.flush()
     return machine
 
@@ -37,7 +38,8 @@ def upsert_machine(db: Session, req: IngestRequest, ip: str,
 def create_scan(db: Session, req: IngestRequest, machine_id: int,
                 ip: str, risk_score: float, risk_class: str,
                 flagged: dict[str, list[str]], prev_score: float | None = None,
-                is_anomaly: bool = False, anomaly_z_score: float | None = None) -> ConfigurationScan:
+                is_anomaly: bool = False, anomaly_z_score: float | None = None,
+                posture_diff: str | None = None) -> ConfigurationScan:
     """Insert one scan row from an IngestRequest."""
     d = req.data
     scan = ConfigurationScan(
@@ -73,16 +75,40 @@ def create_scan(db: Session, req: IngestRequest, machine_id: int,
         backup_absent=not d.backup_configured,     # invert backup_configured
         bitlocker_off=d.bitlocker_off,
 
+        # New fields
+        wdigest_enabled=d.wdigest_enabled,
+        laps_absent=d.laps_absent,
+        nla_disabled=d.nla_disabled,
+        always_install_elevated=d.always_install_elevated,
+
+        # Phase 2 BYOVD & EDR-Killer checks
+        vulnerable_driver_blocklist_enabled=not getattr(d, 'vulnerable_driver_blocklist_enabled', False),
+        hvci_enabled=not getattr(d, 'hvci_enabled', False),
+        asr_rules_configured=not getattr(d, 'asr_rules_configured', False),
+
+        # Phase 3 Active Validation (Mock Attacks)
+        mock_attack_vss_enum_blocked=getattr(d, 'mock_attack_vss_enum_blocked', None),
+        mock_attack_mass_rename_blocked=getattr(d, 'mock_attack_mass_rename_blocked', None),
+
         risk_score=risk_score,
         risk_class=risk_class,
         flagged_parameters=",".join([item for sublist in flagged.values() for item in sublist]),
         is_anomaly=is_anomaly,
         anomaly_z_score=anomaly_z_score,
         prev_risk_score=prev_score,
+        posture_diff=posture_diff,
     )
     db.add(scan)
     db.flush()
     return scan
+
+
+def get_latest_scan(db: Session, hostname: str) -> ConfigurationScan | None:
+    """Return the most recent scan record for this host."""
+    return db.query(ConfigurationScan)\
+        .filter(ConfigurationScan.hostname == hostname)\
+        .order_by(desc(ConfigurationScan.scanned_at))\
+        .first()
 
 
 def get_previous_score(db: Session, hostname: str) -> float | None:

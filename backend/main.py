@@ -175,6 +175,7 @@ async def ingest(
 
     # Get previous score for trend arrow BEFORE upserting
     prev_score = crud.get_previous_score(db, req.host_id)
+    prev_scan = crud.get_latest_scan(db, req.host_id)
 
     # Apply Policy Exceptions
     exceptions = crud.get_policy_exceptions(db, req.host_id)
@@ -183,18 +184,38 @@ async def ingest(
         if key in req.data:
             req.data[key] = False  # Safelist this parameter
 
-    # Score the machine (now returns MITRE hits too)
-    risk_score, risk_class, flagged, mitre_hits = score(req.data)
+    # Score the machine
+    risk_score, risk_class, flagged, mitre_hits, asset_criticality = score(req.data, req.asset_type)
 
-    # Run anomaly detection
+    # Compute posture drift
+    posture_diff = None
+    if prev_scan:
+        import json
+        diffs = []
+        old_flagged = [p.strip() for p in (prev_scan.flagged_parameters or "").split(",") if p.strip()]
+        new_flagged = []
+        for p_list in flagged.values():
+            new_flagged.extend(p_list)
+        
+        for p in new_flagged:
+            if p not in old_flagged:
+                diffs.append(f"+ {p}")
+        for p in old_flagged:
+            if p not in new_flagged:
+                diffs.append(f"- {p}")
+        if diffs:
+            posture_diff = json.dumps(diffs)
+
+    # Run anomaly detection (drift tracking)
     anomaly_result = detect_anomaly(db, req.host_id, risk_score)
 
     # Upsert machine registry + insert scan row (with anomaly data)
-    machine = crud.upsert_machine(db, req, ip, risk_score, risk_class)
+    machine = crud.upsert_machine(db, req, ip, risk_score, risk_class, asset_criticality)
     crud.create_scan(
         db, req, machine.id, ip, risk_score, risk_class, flagged, prev_score,
         is_anomaly=anomaly_result.is_anomaly,
         anomaly_z_score=anomaly_result.z_score,
+        posture_diff=posture_diff
     )
 
     # Update anomaly streak on machine
