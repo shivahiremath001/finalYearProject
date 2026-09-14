@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Info, Target, BookOpen, List, ChevronDown, ChevronRight, CheckCircle2, Shield, Settings, Activity } from 'lucide-react';
-import { PARAM_LABELS, PARAM_DESCRIPTIONS, PARAM_EXTENDED_INFO, MITRE_MAPPING } from '../App';
+import { Target, BookOpen, List, ChevronDown, CheckCircle2, Shield, Settings, Activity } from 'lucide-react';
+import { PARAM_LABELS, PARAM_DESCRIPTIONS, PARAM_EXTENDED_INFO, MITRE_MAPPING } from '../constants';
 
 export default function AboutView() {
   const [activeTab, setActiveTab] = useState('purpose');

@@ -34,28 +34,94 @@ from PIL import Image, ImageDraw
 
 # ── requests import with friendly error ───────────────────────────────────────
 ABOUT_INFO = {
-    "smb_v1_enabled": ("SMBv1 Enabled", "SMBv1 is the exploit vector used by WannaCry and NotPetya. Disabling it closes the most common ransomware propagation path."),
-    "rdp_open": ("RDP Port 3389 Open", "An open RDP port allows brute-force and credential-stuffing attacks. Disabling the Remote Desktop service blocks this."),
-    "autorun_enabled": ("USB AutoRun Enabled", "AutoRun allows malicious USB devices to execute code automatically on insert."),
-    "powershell_unrestricted": ("PowerShell Unrestricted", "An Unrestricted or Bypass policy allows any script to run without warning."),
-    "uac_disabled": ("UAC Disabled", "UAC prevents unauthorized privilege escalation. Without it, malware can silently gain SYSTEM privileges."),
-    "defender_disabled": ("Defender Disabled", "Real-time protection is the primary anti-malware defence on Windows. Ransomware frequently disables it."),
-    "firewall_on": ("Firewall Disabled", "The firewall blocks unsolicited inbound connections. Disabling it exposes every open port directly to the network."),
-    "tamper_protection_off": ("Tamper Protection Off", "Tamper Protection prevents malware from disabling Defender settings via registry or PowerShell."),
-    "event_logging_disabled": ("Event Logging Disabled", "The Event Log service records security events. Without it, attacks leave no trace."),
-    "guest_account_active": ("Guest Account Active", "The Guest account provides unauthenticated network access, a trivial pivot point for lateral movement."),
-    "lsass_protection_off": ("LSASS Protection Off", "LSASS stores credentials in memory. Without PPL protection, tools like Mimikatz can dump plaintext passwords."),
-    "open_network_shares": ("Open Network Shares", "Open shares accessible to 'Everyone' allow ransomware to easily encrypt data across the entire network."),
-    "macro_execution_enabled": ("Office Macros Enabled", "Malicious Office documents use macros to download and execute ransomware payloads."),
-    "applocker_absent": ("AppLocker Absent", "AppLocker restricts which applications can run. Without it, unauthorized malware executables can run freely."),
-    "admin_shares_enabled": ("Admin Shares Enabled", "Default hidden admin shares (C$, ADMIN$) are frequently used by ransomware to move laterally across the network."),
-    "vss_deleted": ("Volume Shadow Copies Deleted", "Ransomware deletes Volume Shadow Copies to prevent you from easily restoring encrypted files."),
-    "backup_configured": ("Backup Not Configured", "Without a working backup service, recovery after a ransomware encryption event is nearly impossible."),
-    "bitlocker_off": ("BitLocker Encryption Off", "Without full disk encryption, physical theft or unauthorized access can easily compromise all stored data."),
-    "wdigest_enabled": ("WDigest Credentials Enabled", "WDigest stores passwords in clear text in LSASS memory, allowing for easy credential dumping."),
-    "laps_absent": ("LAPS Absent", "Without Microsoft LAPS, local admin passwords are often shared, enabling Pass-the-Hash lateral movement."),
-    "nla_disabled": ("RDP NLA Disabled", "Without Network Level Authentication, RDP is vulnerable to pre-authentication attacks and DoS."),
-    "always_install_elevated": ("AlwaysInstallElevated Enabled", "This policy allows any standard user to install MSI packages with SYSTEM privileges, a massive escalation vector.")
+    "smb_v1_enabled": (
+        "SMBv1 Enabled",
+        "SMBv1 is the exploit vector used by WannaCry and NotPetya. Disabling it closes the most common ransomware propagation path.",
+    ),
+    "rdp_open": (
+        "RDP Port 3389 Open",
+        "An open RDP port allows brute-force and credential-stuffing attacks. Disabling the Remote Desktop service blocks this.",
+    ),
+    "autorun_enabled": (
+        "USB AutoRun Enabled",
+        "AutoRun allows malicious USB devices to execute code automatically on insert.",
+    ),
+    "powershell_unrestricted": (
+        "PowerShell Unrestricted",
+        "An Unrestricted or Bypass policy allows any script to run without warning.",
+    ),
+    "uac_disabled": (
+        "UAC Disabled",
+        "UAC prevents unauthorized privilege escalation. Without it, malware can silently gain SYSTEM privileges.",
+    ),
+    "defender_disabled": (
+        "Defender Disabled",
+        "Real-time protection is the primary anti-malware defence on Windows. Ransomware frequently disables it.",
+    ),
+    "firewall_on": (
+        "Firewall Disabled",
+        "The firewall blocks unsolicited inbound connections. Disabling it exposes every open port directly to the network.",
+    ),
+    "tamper_protection_off": (
+        "Tamper Protection Off",
+        "Tamper Protection prevents malware from disabling Defender settings via registry or PowerShell.",
+    ),
+    "event_logging_disabled": (
+        "Event Logging Disabled",
+        "The Event Log service records security events. Without it, attacks leave no trace.",
+    ),
+    "guest_account_active": (
+        "Guest Account Active",
+        "The Guest account provides unauthenticated network access, a trivial pivot point for lateral movement.",
+    ),
+    "lsass_protection_off": (
+        "LSASS Protection Off",
+        "LSASS stores credentials in memory. Without PPL protection, tools like Mimikatz can dump plaintext passwords.",
+    ),
+    "open_network_shares": (
+        "Open Network Shares",
+        "Open shares accessible to 'Everyone' allow ransomware to easily encrypt data across the entire network.",
+    ),
+    "macro_execution_enabled": (
+        "Office Macros Enabled",
+        "Malicious Office documents use macros to download and execute ransomware payloads.",
+    ),
+    "applocker_absent": (
+        "AppLocker Absent",
+        "AppLocker restricts which applications can run. Without it, unauthorized malware executables can run freely.",
+    ),
+    "admin_shares_enabled": (
+        "Admin Shares Enabled",
+        "Default hidden admin shares (C$, ADMIN$) are frequently used by ransomware to move laterally across the network.",
+    ),
+    "vss_deleted": (
+        "Volume Shadow Copies Deleted",
+        "Ransomware deletes Volume Shadow Copies to prevent you from easily restoring encrypted files.",
+    ),
+    "backup_configured": (
+        "Backup Not Configured",
+        "Without a working backup service, recovery after a ransomware encryption event is nearly impossible.",
+    ),
+    "bitlocker_off": (
+        "BitLocker Encryption Off",
+        "Without full disk encryption, physical theft or unauthorized access can easily compromise all stored data.",
+    ),
+    "wdigest_enabled": (
+        "WDigest Credentials Enabled",
+        "WDigest stores passwords in clear text in LSASS memory, allowing for easy credential dumping.",
+    ),
+    "laps_absent": (
+        "LAPS Absent",
+        "Without Microsoft LAPS, local admin passwords are often shared, enabling Pass-the-Hash lateral movement.",
+    ),
+    "nla_disabled": (
+        "RDP NLA Disabled",
+        "Without Network Level Authentication, RDP is vulnerable to pre-authentication attacks and DoS.",
+    ),
+    "always_install_elevated": (
+        "AlwaysInstallElevated Enabled",
+        "This policy allows any standard user to install MSI packages with SYSTEM privileges, a massive escalation vector.",
+    ),
 }
 
 try:
@@ -64,9 +130,10 @@ except ImportError:
     _root = tk.Tk()
     _root.withdraw()
     import tkinter.messagebox as mb
+
     mb.showerror(
         "Missing Library",
-        "The 'requests' library is not installed.\n\nRun:  pip install requests"
+        "The 'requests' library is not installed.\n\nRun:  pip install requests",
     )
     sys.exit(1)
 
@@ -76,29 +143,29 @@ SERVER_PORT = 8000
 _BASE = os.path.dirname(
     sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
 )
-CONFIG_FILE        = os.path.join(_BASE, "r3p_server.txt")
-AGENT_CONFIG_FILE  = os.path.join(_BASE, "agent_config.json")
+CONFIG_FILE = os.path.join(_BASE, "r3p_server.txt")
+AGENT_CONFIG_FILE = os.path.join(_BASE, "agent_config.json")
 
 COLORS = {
-    "bg":       "#111111",
-    "card":     "#111111",
-    "border":   "#333333",
-    "accent":   "#555555",
-    "text":     "#dddddd",
-    "subtle":   "#777777",
-    "safe":     "#4caf50",
-    "low":      "#ff9800",
-    "high":     "#f44336",
+    "bg": "#111111",
+    "card": "#111111",
+    "border": "#333333",
+    "accent": "#555555",
+    "text": "#dddddd",
+    "subtle": "#777777",
+    "safe": "#4caf50",
+    "low": "#ff9800",
+    "high": "#f44336",
     "critical": "#d32f2f",
-    "warning":  "#ffeb3b",
-    "info":     "#2196f3",
+    "warning": "#ffeb3b",
+    "info": "#2196f3",
 }
 
 RISK_COLORS = {
-    "SAFE":      COLORS["safe"],
-    "LOW RISK":  COLORS["low"],
+    "SAFE": COLORS["safe"],
+    "LOW RISK": COLORS["low"],
     "HIGH RISK": COLORS["high"],
-    "CRITICAL":  COLORS["critical"],
+    "CRITICAL": COLORS["critical"],
 }
 
 # ── REMEDIATION ALLOWLIST (must mirror backend/remediation_registry.py) ───────
@@ -192,7 +259,7 @@ PARAM_TO_CMD_KEY = {
     "always_install_elevated": "disable_always_install_elevated",
     "vulnerable_driver_blocklist_enabled": "enable_vulnerable_driver_blocklist",
     "hvci_enabled": "enable_hvci",
-    "asr_rules_configured": "enable_asr_rules"
+    "asr_rules_configured": "enable_asr_rules",
 }
 
 
@@ -261,7 +328,9 @@ def _ps(cmd: str, timeout: int = 12) -> str:
     try:
         r = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
             creationflags=flags,
         )
         return r.stdout.strip()
@@ -308,7 +377,9 @@ def check_smb_v1() -> bool:
 
 
 def check_defender_disabled() -> bool:
-    out = _ps("(Get-MpComputerStatus -ErrorAction SilentlyContinue).RealTimeProtectionEnabled")
+    out = _ps(
+        "(Get-MpComputerStatus -ErrorAction SilentlyContinue).RealTimeProtectionEnabled"
+    )
     return out.lower() != "true"
 
 
@@ -414,7 +485,7 @@ def check_macro_execution_enabled() -> bool:
         "$found = $false;"
         "foreach ($ver in $officeVersions) {"
         "  foreach ($app in $apps) {"
-        "    $path = \"HKCU:\\SOFTWARE\\Microsoft\\Office\\$ver\\$app\\Security\";"
+        '    $path = "HKCU:\\SOFTWARE\\Microsoft\\Office\\$ver\\$app\\Security";'
         "    $val = (Get-ItemProperty $path -ErrorAction SilentlyContinue).VBAWarnings;"
         "    if ($val -eq 1) { $found = $true }"
         "  }"
@@ -501,12 +572,13 @@ def run_mock_attack_vss_enum() -> bool:
     Returns True if BLOCKED (Safe), False if SUCCEEDED (Risky).
     """
     try:
-        out = _ps("Get-WmiObject Win32_ShadowCopy -ErrorAction Stop")
+        _ps("Get-WmiObject Win32_ShadowCopy -ErrorAction Stop")
         # If it throws an exception (e.g. access denied by ASR/EDR), it goes to except
         # If it completes, it wasn't blocked.
         return False
     except Exception:
         return True
+
 
 def run_mock_attack_mass_rename() -> bool:
     """
@@ -515,79 +587,131 @@ def run_mock_attack_mass_rename() -> bool:
     """
     import tempfile
     import shutil
+
     try:
         temp_dir = os.path.join(tempfile.gettempdir(), "r3p_mock_attack")
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
         os.makedirs(temp_dir, exist_ok=True)
-        
+
         # Drop dummy files
         for i in range(100):
             with open(os.path.join(temp_dir, f"dummy_{i}.txt"), "w") as f:
                 f.write("mock_data")
-                
-        script = f'''
+
+        script = f"""
         $files = Get-ChildItem -Path "{temp_dir}" -Filter "*.txt"
         foreach ($file in $files) {{
             Rename-Item -Path $file.FullName -NewName ($file.Name + ".locked") -ErrorAction SilentlyContinue
         }}
-        '''
-        
+        """
+
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-            capture_output=True, text=True, timeout=10, creationflags=flags
+            [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=flags,
         )
-        
+
         # Verify
         locked_files = [f for f in os.listdir(temp_dir) if f.endswith(".locked")]
-        
+
         # Clean up
         shutil.rmtree(temp_dir, ignore_errors=True)
-        
+
         if r.returncode != 0 or len(locked_files) < 100:
-            return True # Blocked or interrupted
-        return False # Successfully renamed all 100 files (EDR failed to block)
-        
+            return True  # Blocked or interrupted
+        return False  # Successfully renamed all 100 files (EDR failed to block)
+
     except Exception:
-        return True # Something blocked or crashed it
+        return True  # Something blocked or crashed it
 
 
 # ── CHECK MANIFEST ─────────────────────────────────────────────────────────────
 CHECKS = [
-    ("rdp_open",                 "Checking RDP port 3389...",              check_rdp_open),
-    ("smb_v1_enabled",           "Checking SMBv1 protocol...",             check_smb_v1),
-    ("autorun_enabled",          "Checking AutoRun settings...",           check_autorun_enabled),
-    ("open_network_shares",      "Checking open network shares...",        check_open_network_shares),
-    ("macro_execution_enabled",  "Checking Office macro settings...",      check_macro_execution_enabled),
-    ("powershell_unrestricted",  "Checking PowerShell policy...",          check_powershell_unrestricted),
-    ("uac_disabled",             "Checking UAC (User Account Control)...", check_uac_disabled),
-    ("applocker_absent",         "Checking AppLocker policy...",           check_applocker_absent),
-    ("defender_disabled",        "Checking Windows Defender...",           check_defender_disabled),
-    ("firewall_on",              "Checking Windows Firewall...",           check_firewall_on),
-    ("tamper_protection_off",    "Checking Tamper Protection...",          check_tamper_protection_off),
-    ("event_logging_disabled",   "Checking Event Log service...",          check_event_logging_disabled),
-    ("admin_shares_enabled",     "Checking default admin shares...",       check_admin_shares),
-    ("lsass_protection_off",     "Checking LSASS protection...",           check_lsass_protection_off),
-    ("guest_account_active",     "Checking Guest account status...",       check_guest_account),
-    ("vss_deleted",              "Checking Volume Shadow Copies...",       check_vss_deleted),
-    ("backup_configured",        "Checking backup service...",             check_backup_configured),
-    ("bitlocker_off",            "Checking BitLocker encryption...",       check_bitlocker_off),
-    ("wdigest_enabled",          "Checking WDigest credentials...",        check_wdigest_enabled),
-    ("laps_absent",              "Checking LAPS installation...",          check_laps_absent),
-    ("nla_disabled",             "Checking RDP NLA...",                    check_nla_disabled),
-    ("always_install_elevated",  "Checking AlwaysInstallElevated...",      check_always_install_elevated),
-    ("vulnerable_driver_blocklist_enabled", "Checking BYOVD Blocklist...", check_vulnerable_driver_blocklist_enabled),
-    ("hvci_enabled",             "Checking HVCI Memory Integrity...",      check_hvci_enabled),
-    ("asr_rules_configured",     "Checking ASR Rules...",                  check_asr_rules_configured),
-    ("mock_attack_vss_enum_blocked",      "Running Mock Attack: VSS Enumeration...", run_mock_attack_vss_enum),
-    ("mock_attack_mass_rename_blocked",   "Running Mock Attack: Mass File Rename...", run_mock_attack_mass_rename),
+    ("rdp_open", "Checking RDP port 3389...", check_rdp_open),
+    ("smb_v1_enabled", "Checking SMBv1 protocol...", check_smb_v1),
+    ("autorun_enabled", "Checking AutoRun settings...", check_autorun_enabled),
+    (
+        "open_network_shares",
+        "Checking open network shares...",
+        check_open_network_shares,
+    ),
+    (
+        "macro_execution_enabled",
+        "Checking Office macro settings...",
+        check_macro_execution_enabled,
+    ),
+    (
+        "powershell_unrestricted",
+        "Checking PowerShell policy...",
+        check_powershell_unrestricted,
+    ),
+    ("uac_disabled", "Checking UAC (User Account Control)...", check_uac_disabled),
+    ("applocker_absent", "Checking AppLocker policy...", check_applocker_absent),
+    ("defender_disabled", "Checking Windows Defender...", check_defender_disabled),
+    ("firewall_on", "Checking Windows Firewall...", check_firewall_on),
+    (
+        "tamper_protection_off",
+        "Checking Tamper Protection...",
+        check_tamper_protection_off,
+    ),
+    (
+        "event_logging_disabled",
+        "Checking Event Log service...",
+        check_event_logging_disabled,
+    ),
+    ("admin_shares_enabled", "Checking default admin shares...", check_admin_shares),
+    (
+        "lsass_protection_off",
+        "Checking LSASS protection...",
+        check_lsass_protection_off,
+    ),
+    ("guest_account_active", "Checking Guest account status...", check_guest_account),
+    ("vss_deleted", "Checking Volume Shadow Copies...", check_vss_deleted),
+    ("backup_configured", "Checking backup service...", check_backup_configured),
+    ("bitlocker_off", "Checking BitLocker encryption...", check_bitlocker_off),
+    ("wdigest_enabled", "Checking WDigest credentials...", check_wdigest_enabled),
+    ("laps_absent", "Checking LAPS installation...", check_laps_absent),
+    ("nla_disabled", "Checking RDP NLA...", check_nla_disabled),
+    (
+        "always_install_elevated",
+        "Checking AlwaysInstallElevated...",
+        check_always_install_elevated,
+    ),
+    (
+        "vulnerable_driver_blocklist_enabled",
+        "Checking BYOVD Blocklist...",
+        check_vulnerable_driver_blocklist_enabled,
+    ),
+    ("hvci_enabled", "Checking HVCI Memory Integrity...", check_hvci_enabled),
+    ("asr_rules_configured", "Checking ASR Rules...", check_asr_rules_configured),
+    (
+        "mock_attack_vss_enum_blocked",
+        "Running Mock Attack: VSS Enumeration...",
+        run_mock_attack_vss_enum,
+    ),
+    (
+        "mock_attack_mass_rename_blocked",
+        "Running Mock Attack: Mass File Rename...",
+        run_mock_attack_mass_rename,
+    ),
 ]
 
 
 def run_all_checks(status_cb=None) -> dict:
     results = {}
-    
+
     def _run_check(key, label, fn):
         if status_cb:
             status_cb(label)
@@ -597,11 +721,13 @@ def run_all_checks(status_cb=None) -> dict:
             return key, False
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(_run_check, key, label, fn) for key, label, fn in CHECKS]
+        futures = [
+            executor.submit(_run_check, key, label, fn) for key, label, fn in CHECKS
+        ]
         for future in concurrent.futures.as_completed(futures):
             k, v = future.result()
             results[k] = v
-            
+
     return results
 
 
@@ -614,14 +740,26 @@ def execute_remediation(cmd_key: str) -> tuple[bool, str]:
     """
     ps_cmd = AGENT_REMEDIATION.get(cmd_key)
     if ps_cmd is None:
-        return False, f"REJECTED: Unknown command key '{cmd_key}' not in local allowlist."
+        return (
+            False,
+            f"REJECTED: Unknown command key '{cmd_key}' not in local allowlist.",
+        )
 
     try:
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive",
-             "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
-            capture_output=True, text=True, timeout=30,
+            [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                ps_cmd,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
             creationflags=flags,
         )
         output = (r.stdout + r.stderr).strip()
@@ -657,44 +795,72 @@ class SetupDialog(tk.Tk):
         body = tk.Frame(self, bg=COLORS["bg"], padx=36, pady=28)
         body.pack(fill="both", expand=True)
 
-        tk.Label(body, text="🛡  R3P Scanner",
-                 font=("Segoe UI", 15, "bold"),
-                 bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w")
+        tk.Label(
+            body,
+            text="🛡  R3P Scanner",
+            font=("Segoe UI", 15, "bold"),
+            bg=COLORS["bg"],
+            fg=COLORS["text"],
+        ).pack(anchor="w")
 
-        tk.Label(body,
-                 text="Enter your server IP or ngrok URL:",
-                 font=("Segoe UI", 9), bg=COLORS["bg"], fg=COLORS["subtle"],
-                 justify="left").pack(anchor="w", pady=(6, 2))
+        tk.Label(
+            body,
+            text="Enter your server IP or ngrok URL:",
+            font=("Segoe UI", 9),
+            bg=COLORS["bg"],
+            fg=COLORS["subtle"],
+            justify="left",
+        ).pack(anchor="w", pady=(6, 2))
 
         examples = (
             "Examples:\n"
             "  Same network:  192.168.1.105\n"
             "  ngrok tunnel:  abc123.ngrok.io"
         )
-        tk.Label(body, text=examples,
-                 font=("Consolas", 8), bg=COLORS["bg"], fg=COLORS["subtle"],
-                 justify="left").pack(anchor="w", pady=(0, 6))
+        tk.Label(
+            body,
+            text=examples,
+            font=("Consolas", 8),
+            bg=COLORS["bg"],
+            fg=COLORS["subtle"],
+            justify="left",
+        ).pack(anchor="w", pady=(0, 6))
 
         self.ip_var = tk.StringVar(value="")
-        entry = tk.Entry(body, textvariable=self.ip_var,
-                         font=("Consolas", 12),
-                         bg=COLORS["card"], fg=COLORS["text"],
-                         insertbackground=COLORS["text"],
-                         relief="flat", bd=8, width=24,
-                         highlightthickness=1,
-                         highlightcolor=COLORS["accent"],
-                         highlightbackground=COLORS["border"])
+        entry = tk.Entry(
+            body,
+            textvariable=self.ip_var,
+            font=("Consolas", 12),
+            bg=COLORS["card"],
+            fg=COLORS["text"],
+            insertbackground=COLORS["text"],
+            relief="flat",
+            bd=8,
+            width=24,
+            highlightthickness=1,
+            highlightcolor=COLORS["accent"],
+            highlightbackground=COLORS["border"],
+        )
         entry.pack(anchor="w")
         entry.icursor(tk.END)
         entry.focus_set()
         entry.bind("<Return>", lambda _: self._submit())
 
-        tk.Button(body, text="Connect & Start Monitoring  →",
-                  font=("Segoe UI", 10, "bold"),
-                  bg=COLORS["accent"], fg="white",
-                  activebackground="#7c73ff", activeforeground="white",
-                  relief="flat", bd=0, padx=18, pady=7,
-                  cursor="hand2", command=self._submit).pack(anchor="w", pady=(16, 0))
+        tk.Button(
+            body,
+            text="Connect & Start Monitoring  →",
+            font=("Segoe UI", 10, "bold"),
+            bg=COLORS["accent"],
+            fg="white",
+            activebackground="#7c73ff",
+            activeforeground="white",
+            relief="flat",
+            bd=0,
+            padx=18,
+            pady=7,
+            cursor="hand2",
+            command=self._submit,
+        ).pack(anchor="w", pady=(16, 0))
 
     def _submit(self):
         ip = self.ip_var.get().strip()
@@ -710,17 +876,17 @@ class MonitorApp(tk.Tk):
 
     def __init__(self, server_ip: str):
         super().__init__()
-        self.server_ip      = server_ip
-        self.base_url       = build_api_url(server_ip)
-        self.config_data    = load_agent_config()
-        self.scan_interval  = int(self.config_data.get("scan_interval_seconds", 60))
-        self.api_key        = self.config_data.get("api_key", "R3P-DEMO-KEY")
-        self.cmd_poll_on    = self.config_data.get("command_poll_enabled", True)
+        self.server_ip = server_ip
+        self.base_url = build_api_url(server_ip)
+        self.config_data = load_agent_config()
+        self.scan_interval = int(self.config_data.get("scan_interval_seconds", 60))
+        self.api_key = self.config_data.get("api_key", "R3P-DEMO-KEY")
+        self.cmd_poll_on = self.config_data.get("command_poll_enabled", True)
 
-        self._stop_event    = threading.Event()
-        self._wake_event    = threading.Event()
-        self._last_result   = None
-        self._next_scan_at  = None
+        self._stop_event = threading.Event()
+        self._wake_event = threading.Event()
+        self._last_result = None
+        self._next_scan_at = None
         self._cmd_label_text = tk.StringVar(value="")
 
         self.title("R3P — Continuous Security Monitor")
@@ -734,9 +900,7 @@ class MonitorApp(tk.Tk):
         self._setup_tray()
 
         # Start the continuous monitoring loop
-        self._monitor_thread = threading.Thread(
-            target=self._monitor_loop, daemon=True
-        )
+        self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._monitor_thread.start()
 
         # Start the countdown ticker (runs on main thread via `after`)
@@ -755,27 +919,47 @@ class MonitorApp(tk.Tk):
         # Header
         hdr = tk.Frame(self, bg=COLORS["bg"], pady=14)
         hdr.pack(fill="x", padx=26)
-        
+
         # Left side texts
         title_frame = tk.Frame(hdr, bg=COLORS["bg"])
         title_frame.pack(side="left")
-        tk.Label(title_frame, text="🛡  R3P Monitor",
-                 font=("Segoe UI", 17, "bold"),
-                 bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w")
-        tk.Label(title_frame, text="Continuous Ransomware Readiness Monitoring",
-                 font=("Segoe UI", 9), bg=COLORS["bg"], fg=COLORS["subtle"]).pack(anchor="w")
-        
+        tk.Label(
+            title_frame,
+            text="🛡  R3P Monitor",
+            font=("Segoe UI", 17, "bold"),
+            bg=COLORS["bg"],
+            fg=COLORS["text"],
+        ).pack(anchor="w")
+        tk.Label(
+            title_frame,
+            text="Continuous Ransomware Readiness Monitoring",
+            font=("Segoe UI", 9),
+            bg=COLORS["bg"],
+            fg=COLORS["subtle"],
+        ).pack(anchor="w")
+
         # Right side info button
-        about_btn = tk.Button(hdr, text="ⓘ", font=("Segoe UI", 16, "bold"),
-                              bg=COLORS["bg"], fg=COLORS["info"], bd=0, 
-                              activebackground=COLORS["bg"], activeforeground=COLORS["text"],
-                              cursor="hand2", command=self._show_about)
+        about_btn = tk.Button(
+            hdr,
+            text="ⓘ",
+            font=("Segoe UI", 16, "bold"),
+            bg=COLORS["bg"],
+            fg=COLORS["info"],
+            bd=0,
+            activebackground=COLORS["bg"],
+            activeforeground=COLORS["text"],
+            cursor="hand2",
+            command=self._show_about,
+        )
         about_btn.pack(side="right", anchor="n")
 
         # Status card
-        self.status_card = tk.Frame(self, bg=COLORS["card"],
-                                    highlightthickness=1,
-                                    highlightbackground=COLORS["border"])
+        self.status_card = tk.Frame(
+            self,
+            bg=COLORS["card"],
+            highlightthickness=1,
+            highlightbackground=COLORS["border"],
+        )
         self.status_card.pack(fill="x", padx=20, pady=(0, 6))
         inner_s = tk.Frame(self.status_card, bg=COLORS["card"], padx=22, pady=16)
         inner_s.pack(fill="x")
@@ -783,75 +967,125 @@ class MonitorApp(tk.Tk):
         # Live indicator dot
         dot_row = tk.Frame(inner_s, bg=COLORS["card"])
         dot_row.pack(anchor="w")
-        self.dot_canvas = tk.Canvas(dot_row, bg=COLORS["card"], width=12, height=12,
-                                    highlightthickness=0)
+        self.dot_canvas = tk.Canvas(
+            dot_row, bg=COLORS["card"], width=12, height=12, highlightthickness=0
+        )
         self.dot_canvas.pack(side="left", padx=(0, 6))
-        self._dot = self.dot_canvas.create_oval(2, 2, 10, 10, fill=COLORS["subtle"], outline="")
-        self.monitor_label = tk.Label(dot_row, text="Initializing…",
-                                      font=("Segoe UI", 10, "bold"),
-                                      bg=COLORS["card"], fg=COLORS["text"])
+        self._dot = self.dot_canvas.create_oval(
+            2, 2, 10, 10, fill=COLORS["subtle"], outline=""
+        )
+        self.monitor_label = tk.Label(
+            dot_row,
+            text="Initializing…",
+            font=("Segoe UI", 10, "bold"),
+            bg=COLORS["card"],
+            fg=COLORS["text"],
+        )
         self.monitor_label.pack(side="left")
 
-        self.status_lbl = tk.Label(inner_s, text="Starting first scan…",
-                                   font=("Segoe UI", 9),
-                                   bg=COLORS["card"], fg=COLORS["subtle"],
-                                   anchor="w")
+        self.status_lbl = tk.Label(
+            inner_s,
+            text="Starting first scan…",
+            font=("Segoe UI", 9),
+            bg=COLORS["card"],
+            fg=COLORS["subtle"],
+            anchor="w",
+        )
         self.status_lbl.pack(anchor="w", pady=(4, 0), fill="x")
 
         # Timer row
         timer_row = tk.Frame(inner_s, bg=COLORS["card"])
         timer_row.pack(anchor="w", pady=(6, 0))
-        tk.Label(timer_row, text="Next scan in:",
-                 font=("Segoe UI", 8), bg=COLORS["card"], fg=COLORS["subtle"]).pack(side="left")
-        self.countdown_lbl = tk.Label(timer_row, text="–",
-                                      font=("Consolas", 9, "bold"),
-                                      bg=COLORS["card"], fg=COLORS["accent"])
+        tk.Label(
+            timer_row,
+            text="Next scan in:",
+            font=("Segoe UI", 8),
+            bg=COLORS["card"],
+            fg=COLORS["subtle"],
+        ).pack(side="left")
+        self.countdown_lbl = tk.Label(
+            timer_row,
+            text="–",
+            font=("Consolas", 9, "bold"),
+            bg=COLORS["card"],
+            fg=COLORS["accent"],
+        )
         self.countdown_lbl.pack(side="left", padx=(6, 0))
 
         # Command notification label
-        self.cmd_lbl = tk.Label(inner_s, textvariable=self._cmd_label_text,
-                                font=("Segoe UI", 8, "italic"),
-                                bg=COLORS["card"], fg=COLORS["info"],
-                                anchor="w", wraplength=440)
+        self.cmd_lbl = tk.Label(
+            inner_s,
+            textvariable=self._cmd_label_text,
+            font=("Segoe UI", 8, "italic"),
+            bg=COLORS["card"],
+            fg=COLORS["info"],
+            anchor="w",
+            wraplength=440,
+        )
         self.cmd_lbl.pack(anchor="w", pady=(4, 0), fill="x")
 
         # Result card with scrollable canvas
-        self.result_card = tk.Frame(self, bg=COLORS["card"],
-                                    highlightthickness=1,
-                                    highlightbackground=COLORS["border"])
+        self.result_card = tk.Frame(
+            self,
+            bg=COLORS["card"],
+            highlightthickness=1,
+            highlightbackground=COLORS["border"],
+        )
         self.result_card.pack(fill="both", expand=True, padx=20, pady=(0, 10))
-        
-        self.result_canvas = tk.Canvas(self.result_card, bg=COLORS["card"], highlightthickness=0)
-        self.result_scrollbar = ttk.Scrollbar(self.result_card, orient="vertical", command=self.result_canvas.yview)
-        
-        self.result_inner = tk.Frame(self.result_canvas, bg=COLORS["card"], padx=10, pady=10)
-        
+
+        self.result_canvas = tk.Canvas(
+            self.result_card, bg=COLORS["card"], highlightthickness=0
+        )
+        self.result_scrollbar = ttk.Scrollbar(
+            self.result_card, orient="vertical", command=self.result_canvas.yview
+        )
+
+        self.result_inner = tk.Frame(
+            self.result_canvas, bg=COLORS["card"], padx=10, pady=10
+        )
+
         self.result_inner.bind(
             "<Configure>",
-            lambda e: self.result_canvas.configure(scrollregion=self.result_canvas.bbox("all"))
+            lambda e: self.result_canvas.configure(
+                scrollregion=self.result_canvas.bbox("all")
+            ),
         )
-        
-        self.result_canvas.create_window((0, 0), window=self.result_inner, anchor="nw", width=380)
+
+        self.result_canvas.create_window(
+            (0, 0), window=self.result_inner, anchor="nw", width=380
+        )
         self.result_canvas.configure(yscrollcommand=self.result_scrollbar.set)
-        
+
         self.result_canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
         self.result_scrollbar.pack(side="right", fill="y")
-        
+
         self.scrollable_canvas = self.result_canvas
         self.bind_all("<MouseWheel>", self._on_mousewheel)
 
-        tk.Label(self.result_inner, text="Waiting for first scan result…",
-                 font=("Segoe UI", 10),
-                 bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w")
+        tk.Label(
+            self.result_inner,
+            text="Waiting for first scan result…",
+            font=("Segoe UI", 10),
+            bg=COLORS["card"],
+            fg=COLORS["subtle"],
+        ).pack(anchor="w")
 
         # Footer
         footer = tk.Frame(self, bg=COLORS["bg"], pady=8)
         footer.pack(fill="x")
-        self.close_btn = tk.Button(footer, text="Hide to System Tray",
-                                   font=("Segoe UI", 9),
-                                   bg=COLORS["border"], fg=COLORS["text"],
-                                   relief="flat", bd=0, padx=18, pady=6,
-                                   cursor="hand2", command=self._on_close)
+        self.close_btn = tk.Button(
+            footer,
+            text="Hide to System Tray",
+            font=("Segoe UI", 9),
+            bg=COLORS["border"],
+            fg=COLORS["text"],
+            relief="flat",
+            bd=0,
+            padx=18,
+            pady=6,
+            cursor="hand2",
+            command=self._on_close,
+        )
         self.close_btn.pack()
 
     # ── Helpers ───────────────────────────────────────────────────────────
@@ -861,7 +1095,9 @@ class MonitorApp(tk.Tk):
         if widget:
             toplevel = widget.winfo_toplevel()
             if hasattr(toplevel, "scrollable_canvas"):
-                toplevel.scrollable_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                toplevel.scrollable_canvas.yview_scroll(
+                    int(-1 * (event.delta / 120)), "units"
+                )
 
     def _set_status(self, msg: str):
         self.after(0, lambda: self.status_lbl.config(text=msg))
@@ -888,18 +1124,20 @@ class MonitorApp(tk.Tk):
     # ── System Tray Logic ─────────────────────────────────────────────────
     def _create_tray_image(self):
         # Create a simple shield/dot image for the tray
-        img = Image.new('RGB', (64, 64), color=(13, 17, 23))
+        img = Image.new("RGB", (64, 64), color=(13, 17, 23))
         d = ImageDraw.Draw(img)
         d.ellipse([16, 16, 48, 48], fill=(108, 99, 255))
         return img
 
     def _setup_tray(self):
         menu = pystray.Menu(
-            item('Show Dashboard', self._show_window, default=True),
-            item('Quit', self._quit_app)
+            item("Show Dashboard", self._show_window, default=True),
+            item("Quit", self._quit_app),
         )
-        self.tray_icon = pystray.Icon("R3P_Agent", self._create_tray_image(), "R3P Agent", menu)
-        
+        self.tray_icon = pystray.Icon(
+            "R3P_Agent", self._create_tray_image(), "R3P Agent", menu
+        )
+
         # Run tray in a separate thread so it doesn't block Tkinter
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
 
@@ -928,9 +1166,12 @@ class MonitorApp(tk.Tk):
             t_start = time.time()
 
             # Update GUI
-            self.after(0, lambda c=cycle: self.monitor_label.config(
-                text=f"🔄  Monitoring Active  [scan #{c}]"
-            ))
+            self.after(
+                0,
+                lambda c=cycle: self.monitor_label.config(
+                    text=f"🔄  Monitoring Active  [scan #{c}]"
+                ),
+            )
             self._set_dot(COLORS["accent"])
 
             # ── Step 1: Run checks ────────────────────────────────────────
@@ -961,22 +1202,23 @@ class MonitorApp(tk.Tk):
             elapsed = time.time() - t_start
             sleep_time = max(1, self.scan_interval - elapsed)
             self._next_scan_at = time.time() + sleep_time
-            
+
             # Wait for wake event or timeout
             self._wake_event.wait(timeout=sleep_time)
             self._wake_event.clear()
 
     def _send_telemetry(self, data: dict) -> dict | None:
         payload = {
-            "host_id":   platform.node(),
-            "os":        get_os_info(),
+            "host_id": platform.node(),
+            "os": get_os_info(),
             "asset_type": load_agent_config().get("asset_type", "Workstation"),
-            "ip":        get_local_ip(),
+            "ip": get_local_ip(),
             "timestamp": datetime.now().isoformat(),
-            "data":      data,
+            "data": data,
         }
         try:
             import urllib3
+
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
             resp = requests.post(
                 f"{self.base_url}/ingest",
@@ -1007,7 +1249,7 @@ class MonitorApp(tk.Tk):
             return
 
         for cmd in commands:
-            cmd_id  = cmd.get("id")
+            cmd_id = cmd.get("id")
             cmd_key = cmd.get("command_key", "")
 
             self._set_cmd_notice(f"⚙ Executing remote fix: '{cmd_key}'…")
@@ -1015,7 +1257,8 @@ class MonitorApp(tk.Tk):
 
             self._ack_command(cmd_id, "done" if success else "failed", output)
             notice = (
-                f"✅ Fix applied: '{cmd_key}'" if success
+                f"✅ Fix applied: '{cmd_key}'"
+                if success
                 else f"❌ Fix failed: '{cmd_key}' — {output[:60]}"
             )
             self._set_cmd_notice(notice)
@@ -1042,100 +1285,151 @@ class MonitorApp(tk.Tk):
 
         risk_class = result.get("risk_class", "UNKNOWN")
         risk_score = result.get("risk_score", 0)
-        flagged    = result.get("flagged", {})
+        flagged = result.get("flagged", {})
         color = RISK_COLORS.get(risk_class, COLORS["subtle"])
 
         # Risk badge
         badge = tk.Frame(self.result_inner, bg=color, padx=14, pady=5)
         badge.pack(anchor="w", pady=(0, 10))
-        tk.Label(badge, text=f"  {risk_class}  ",
-                 font=("Segoe UI", 13, "bold"),
-                 bg=color, fg="white").pack()
+        tk.Label(
+            badge,
+            text=f"  {risk_class}  ",
+            font=("Segoe UI", 13, "bold"),
+            bg=color,
+            fg="white",
+        ).pack()
 
         # Score row
         row = tk.Frame(self.result_inner, bg=COLORS["card"])
         row.pack(anchor="w", pady=(0, 4))
-        tk.Label(row, text="Risk Score: ",
-                 font=("Segoe UI", 10),
-                 bg=COLORS["card"], fg=COLORS["subtle"]).pack(side="left")
-        tk.Label(row, text=f"{risk_score} / 100",
-                 font=("Segoe UI", 10, "bold"),
-                 bg=COLORS["card"], fg=color).pack(side="left")
+        tk.Label(
+            row,
+            text="Risk Score: ",
+            font=("Segoe UI", 10),
+            bg=COLORS["card"],
+            fg=COLORS["subtle"],
+        ).pack(side="left")
+        tk.Label(
+            row,
+            text=f"{risk_score} / 100",
+            font=("Segoe UI", 10, "bold"),
+            bg=COLORS["card"],
+            fg=color,
+        ).pack(side="left")
 
         if isinstance(flagged, dict):
             total_flagged = sum(len(v) for v in flagged.values())
         else:
             total_flagged = len(flagged)
 
-        tk.Label(self.result_inner,
-                 text=f"Machine: {platform.node()}   |   {total_flagged} issues flagged",
-                 font=("Segoe UI", 8),
-                 bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w", pady=(0, 10))
+        tk.Label(
+            self.result_inner,
+            text=f"Machine: {platform.node()}   |   {total_flagged} issues flagged",
+            font=("Segoe UI", 8),
+            bg=COLORS["card"],
+            fg=COLORS["subtle"],
+        ).pack(anchor="w", pady=(0, 10))
 
-        tk.Frame(self.result_inner, bg=COLORS["border"], height=1).pack(fill="x", pady=(0, 8))
+        tk.Frame(self.result_inner, bg=COLORS["border"], height=1).pack(
+            fill="x", pady=(0, 8)
+        )
 
         if total_flagged > 0:
-            tk.Label(self.result_inner, text="⚠  Issues Detected:",
-                     font=("Segoe UI", 9, "bold"),
-                     bg=COLORS["card"], fg=COLORS["warning"]).pack(anchor="w", pady=(0, 4))
+            tk.Label(
+                self.result_inner,
+                text="⚠  Issues Detected:",
+                font=("Segoe UI", 9, "bold"),
+                bg=COLORS["card"],
+                fg=COLORS["warning"],
+            ).pack(anchor="w", pady=(0, 4))
 
             if isinstance(flagged, dict):
                 for phase, items in flagged.items():
                     if not items:
                         continue
-                    tk.Label(self.result_inner, text=f"[{phase}]",
-                             font=("Segoe UI", 8, "bold"),
-                             bg=COLORS["card"], fg=COLORS["subtle"]).pack(anchor="w", pady=(6, 2))
-                    for item in items:
+                    tk.Label(
+                        self.result_inner,
+                        text=f"[{phase}]",
+                        font=("Segoe UI", 8, "bold"),
+                        bg=COLORS["card"],
+                        fg=COLORS["subtle"],
+                    ).pack(anchor="w", pady=(6, 2))
+                    for flag_item in items:
                         r2 = tk.Frame(self.result_inner, bg=COLORS["card"])
                         r2.pack(anchor="w", pady=1)
-                        tk.Label(r2, text="•",
-                                 font=("Segoe UI", 9),
-                                 bg=COLORS["card"], fg=color).pack(side="left", padx=(8, 4))
-                        
-                        tk.Label(r2, text=item.replace("_", " ").title(),
-                                 font=("Segoe UI", 9),
-                                 bg=COLORS["card"], fg=COLORS["text"]).pack(side="left")
-                        
-                        cmd_key = PARAM_TO_CMD_KEY.get(item)
-                        if cmd_key:
-                            tk.Button(r2, text="Fix",
-                                      font=("Segoe UI", 7, "bold"),
-                                      bg=COLORS["accent"], fg="white",
-                                      activebackground=COLORS["safe"], activeforeground="white",
-                                      relief="flat", bd=0, padx=6, pady=2,
-                                      cursor="hand2",
-                                      command=lambda k=cmd_key: self._on_fix_clicked(k)).pack(side="right", padx=(0, 4))
-        else:
-            tk.Label(self.result_inner, text="✅  No issues detected — system looks clean!",
-                     font=("Segoe UI", 10),
-                     bg=COLORS["card"], fg=COLORS["safe"]).pack(anchor="w")
+                        tk.Label(
+                            r2,
+                            text="•",
+                            font=("Segoe UI", 9),
+                            bg=COLORS["card"],
+                            fg=color,
+                        ).pack(side="left", padx=(8, 4))
 
-        tk.Label(self.result_inner, text="✓ Results streaming to R3P admin dashboard",
-                 font=("Segoe UI", 8),
-                 bg=COLORS["card"], fg=COLORS["safe"]).pack(anchor="w", pady=(10, 0))
+                        tk.Label(
+                            r2,
+                            text=flag_item.replace("_", " ").title(),
+                            font=("Segoe UI", 9),
+                            bg=COLORS["card"],
+                            fg=COLORS["text"],
+                        ).pack(side="left")
+
+                        cmd_key = PARAM_TO_CMD_KEY.get(flag_item)
+                        if cmd_key:
+                            tk.Button(
+                                r2,
+                                text="Fix",
+                                font=("Segoe UI", 7, "bold"),
+                                bg=COLORS["accent"],
+                                fg="white",
+                                activebackground=COLORS["safe"],
+                                activeforeground="white",
+                                relief="flat",
+                                bd=0,
+                                padx=6,
+                                pady=2,
+                                cursor="hand2",
+                                command=lambda k=cmd_key: self._on_fix_clicked(k),
+                            ).pack(side="right", padx=(0, 4))
+        else:
+            tk.Label(
+                self.result_inner,
+                text="✅  No issues detected — system looks clean!",
+                font=("Segoe UI", 10),
+                bg=COLORS["card"],
+                fg=COLORS["safe"],
+            ).pack(anchor="w")
+
+        tk.Label(
+            self.result_inner,
+            text="✓ Results streaming to R3P admin dashboard",
+            font=("Segoe UI", 8),
+            bg=COLORS["card"],
+            fg=COLORS["safe"],
+        ).pack(anchor="w", pady=(10, 0))
 
     def _on_fix_clicked(self, cmd_key: str):
         # Run fix in a thread to prevent freezing the GUI
-        threading.Thread(target=self._run_local_fix, args=(cmd_key,), daemon=True).start()
+        threading.Thread(
+            target=self._run_local_fix, args=(cmd_key,), daemon=True
+        ).start()
 
     def _run_local_fix(self, cmd_key: str):
         self._set_cmd_notice(f"⚙ Executing local fix: '{cmd_key}'…")
         success, output = execute_remediation(cmd_key)
         notice = (
-            f"✅ Fix applied: '{cmd_key}'" if success
+            f"✅ Fix applied: '{cmd_key}'"
+            if success
             else f"❌ Fix failed: '{cmd_key}' — {output[:60]}"
         )
         self._set_cmd_notice(notice)
         self.after(20000, lambda: self._cmd_label_text.set(""))
-        
+
         # Trigger an immediate rescan
         self._wake_event.set()
 
     def _on_close(self):
         # Hide window instead of destroying it
         self.withdraw()
-
 
     def _show_about(self):
         """Displays an accordion-style modal explaining each security parameter."""
@@ -1145,32 +1439,36 @@ class MonitorApp(tk.Tk):
         about_win.configure(bg=COLORS["bg"])
         about_win.attributes("-topmost", True)
         about_win.resizable(False, False)
-        
+
         # Scrollable canvas for the accordion
         canvas = tk.Canvas(about_win, bg=COLORS["bg"], highlightthickness=0)
         about_win.scrollable_canvas = canvas
-        
+
         scrollbar = ttk.Scrollbar(about_win, orient="vertical", command=canvas.yview)
         scrollable_frame = tk.Frame(canvas, bg=COLORS["bg"])
-        
+
         scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
-        
+
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=460)
         canvas.configure(yscrollcommand=scrollbar.set)
-        
+
         canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
         scrollbar.pack(side="right", fill="y")
-        
-        tk.Label(scrollable_frame, text="Security Configuration Guide",
-                 font=("Segoe UI", 16, "bold"), bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w", pady=(10, 20), padx=10)
-        
+
+        tk.Label(
+            scrollable_frame,
+            text="Security Configuration Guide",
+            font=("Segoe UI", 16, "bold"),
+            bg=COLORS["bg"],
+            fg=COLORS["text"],
+        ).pack(anchor="w", pady=(10, 20), padx=10)
+
         # Accordion Logic
         self.accordion_frames = {}
         self.accordion_labels = {}
-        
+
         def toggle_accordion(key):
             # Close all
             for k, frame in self.accordion_frames.items():
@@ -1185,20 +1483,36 @@ class MonitorApp(tk.Tk):
             # Container for both button and content
             container = tk.Frame(scrollable_frame, bg=COLORS["bg"])
             container.pack(fill="x", padx=10, pady=(5, 0))
-            
+
             # Header button
-            btn = tk.Label(container, text=f"► {title}", font=("Segoe UI", 10, "bold"),
-                           bg=COLORS["card"], fg=COLORS["text"], anchor="w", padx=10, pady=8, cursor="hand2")
+            btn = tk.Label(
+                container,
+                text=f"► {title}",
+                font=("Segoe UI", 10, "bold"),
+                bg=COLORS["card"],
+                fg=COLORS["text"],
+                anchor="w",
+                padx=10,
+                pady=8,
+                cursor="hand2",
+            )
             btn.pack(fill="x")
             btn.bind("<Button-1>", lambda e, k=key: toggle_accordion(k))
             self.accordion_labels[key] = btn
-            
+
             # Content frame (hidden initially)
             content_frame = tk.Frame(container, bg=COLORS["bg"])
-            desc_lbl = tk.Label(content_frame, text=desc, font=("Segoe UI", 9),
-                                bg=COLORS["bg"], fg=COLORS["subtle"], wraplength=410, justify="left")
+            desc_lbl = tk.Label(
+                content_frame,
+                text=desc,
+                font=("Segoe UI", 9),
+                bg=COLORS["bg"],
+                fg=COLORS["subtle"],
+                wraplength=410,
+                justify="left",
+            )
             desc_lbl.pack(anchor="w", padx=10, pady=10)
-            
+
             self.accordion_frames[key] = content_frame
 
 

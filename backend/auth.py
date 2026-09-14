@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 try:
     import jwt
+
     _JWT_AVAILABLE = True
 except ImportError:
     _JWT_AVAILABLE = False
@@ -29,7 +30,9 @@ import models
 # ── Config ────────────────────────────────────────────────────────────────────
 SECRET_KEY = os.environ.get("JWT_SECRET", "r3p-dev-secret-key-1234567890")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("TOKEN_EXPIRE_MINUTES", "480"))  # 8 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = int(
+    os.environ.get("TOKEN_EXPIRE_MINUTES", "480")
+)  # 8 hours
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/admin/login")
 
@@ -55,6 +58,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     if not _JWT_AVAILABLE:
         # Fallback: simple signed token using HMAC (no expiry)
         import base64, json
+
         payload = json.dumps(data).encode()
         sig = hmac.new(SECRET_KEY.encode(), payload, hashlib.sha256).hexdigest()
         return base64.urlsafe_b64encode(payload).decode() + "." + sig
@@ -71,9 +75,12 @@ def decode_token(token: str) -> dict | None:
     if not _JWT_AVAILABLE:
         try:
             import base64, json
+
             payload_b64, sig = token.rsplit(".", 1)
             payload = base64.urlsafe_b64decode(payload_b64.encode())
-            expected_sig = hmac.new(SECRET_KEY.encode(), payload, hashlib.sha256).hexdigest()
+            expected_sig = hmac.new(
+                SECRET_KEY.encode(), payload, hashlib.sha256
+            ).hexdigest()
             if hmac.compare_digest(sig, expected_sig):
                 return json.loads(payload)
         except Exception:
@@ -113,7 +120,9 @@ def get_current_admin(
 
     admin = db.query(models.AdminUser).filter_by(username=username).first()
     if not admin or not admin.is_active:
-        raise HTTPException(status_code=401, detail="Admin account not found or disabled")
+        raise HTTPException(
+            status_code=401, detail="Admin account not found or disabled"
+        )
     return admin
 
 
@@ -130,5 +139,7 @@ def ensure_default_admin(db: Session):
         )
         db.add(admin)
         db.commit()
-        print(f"[AUTH] Default admin created: username='{default_user}' "
-              f"password='{default_pass}' — CHANGE THIS IN PRODUCTION!")
+        print(
+            f"[AUTH] Default admin created: username='{default_user}' "
+            f"password='{default_pass}' — CHANGE THIS IN PRODUCTION!"
+        )

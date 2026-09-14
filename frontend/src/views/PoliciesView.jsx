@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Shield, ShieldCheck, X, Plus } from 'lucide-react';
-import { API_BASE } from '../App';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, Plus } from 'lucide-react';
+import { API_BASE } from '../constants';
 
 export default function PoliciesView({ token }) {
   const [policies, setPolicies] = useState([]);
@@ -8,7 +8,7 @@ export default function PoliciesView({ token }) {
   const [showModal, setShowModal] = useState(false);
   const [newPolicy, setNewPolicy] = useState({ hostname: '', param_key: 'smb_v1_enabled', reason: '' });
 
-  const fetchPolicies = async () => {
+  const fetchPolicies = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/policies`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
@@ -16,9 +16,9 @@ export default function PoliciesView({ token }) {
         setPolicies(data);
       }
     } catch (e) { console.error(e); }
-  };
+  }, [token]);
 
-  const fetchMachines = async () => {
+  const fetchMachines = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/machines`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
@@ -27,12 +27,12 @@ export default function PoliciesView({ token }) {
         if (data.length > 0) setNewPolicy(p => ({ ...p, hostname: data[0].hostname }));
       }
     } catch (e) { console.error(e); }
-  };
+  }, [token]);
 
   useEffect(() => {
     fetchPolicies();
     fetchMachines();
-  }, [token]);
+  }, [fetchPolicies, fetchMachines]);
 
   const handleDelete = async (id) => {
     try {

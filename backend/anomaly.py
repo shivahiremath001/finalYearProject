@@ -28,19 +28,20 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-WINDOW_SIZE = 10       # Number of historical scans to consider
-MIN_HISTORY = 3        # Minimum scans before anomaly detection activates
-Z_THRESHOLD = 2.0      # |z| must exceed this to flag an anomaly
+WINDOW_SIZE = 10  # Number of historical scans to consider
+MIN_HISTORY = 3  # Minimum scans before anomaly detection activates
+Z_THRESHOLD = 2.0  # |z| must exceed this to flag an anomaly
 
 
 @dataclass
 class AnomalyResult:
     """Result of anomaly detection for a single scan."""
-    is_anomaly:     bool
-    z_score:        float | None
-    rolling_mean:   float | None
-    rolling_std:    float | None
-    direction:      str            # "spike" | "drop" | "normal"
+
+    is_anomaly: bool
+    z_score: float | None
+    rolling_mean: float | None
+    rolling_std: float | None
+    direction: str  # "spike" | "drop" | "normal"
     scans_analyzed: int
 
 
@@ -96,7 +97,7 @@ def detect_anomaly(
         # If current score differs from the constant mean, it's a notable change
         # but we can't compute a meaningful z-score
         if current_score != mean:
-            z = float('inf') if current_score > mean else float('-inf')
+            z = float("inf") if current_score > mean else float("-inf")
             direction = "spike" if current_score > mean else "drop"
             return AnomalyResult(
                 is_anomaly=True,

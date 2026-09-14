@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Zap, Server, Loader2 } from 'lucide-react';
-import { API_BASE } from '../App';
+import { API_BASE } from '../constants';
 
 export default function RemediationView({ token }) {
-  const [machines, setMachines] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {

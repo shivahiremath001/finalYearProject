@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
-import { API_BASE } from '../App';
+import { API_BASE } from '../constants';
 import Chart from 'chart.js/auto';
 
 export default function AnalyticsView({ token }) {

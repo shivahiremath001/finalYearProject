@@ -32,8 +32,14 @@ WS  /ws/live                          ← WebSocket: real-time scan events → d
 """
 
 from fastapi import (
-    FastAPI, Depends, HTTPException, Request, Security,
-    WebSocket, WebSocketDisconnect, status,
+    FastAPI,
+    Depends,
+    HTTPException,
+    Request,
+    Security,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
 )
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,6 +54,7 @@ from typing import Set
 # Load .env file
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     _env_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -62,16 +69,29 @@ except ImportError:
 import models
 from database import engine, SessionLocal
 from schemas import (
-    IngestRequest, ScanResponse, MachineOut, ScanOut,
-    AdminLogin, TokenOut, AdminOut,
-    IssueCommand, CommandOut, CommandAck, CommandHistoryOut,
-    RemediationCommandDef, PolicyExceptionCreate, PolicyExceptionOut
+    IngestRequest,
+    ScanResponse,
+    MachineOut,
+    ScanOut,
+    AdminLogin,
+    TokenOut,
+    AdminOut,
+    IssueCommand,
+    CommandOut,
+    CommandAck,
+    CommandHistoryOut,
+    RemediationCommandDef,
+    PolicyExceptionCreate,
+    PolicyExceptionOut,
 )
 from scoring import score, get_mitre_mapping, get_mitre_hits, MITRE_MAPPING
 import crud
 from auth import (
-    verify_password, create_access_token, get_current_admin,
-    ensure_default_admin, hash_password,
+    verify_password,
+    create_access_token,
+    get_current_admin,
+    ensure_default_admin,
+    hash_password,
 )
 from remediation_registry import get_all_commands, get_command
 from anomaly import detect_anomaly
@@ -88,7 +108,7 @@ app = FastAPI(
 # ── CORS: allow the React frontend ───────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # tighten to your frontend URL in production
+    allow_origins=["*"],  # tighten to your frontend URL in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -159,6 +179,7 @@ def startup_event():
 # AGENT ENDPOINTS (protected by X-API-Key)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.post("/ingest", response_model=ScanResponse)
 async def ingest(
     req: IngestRequest,
@@ -185,18 +206,23 @@ async def ingest(
             req.data[key] = False  # Safelist this parameter
 
     # Score the machine
-    risk_score, risk_class, flagged, mitre_hits, asset_criticality = score(req.data, req.asset_type)
+    risk_score, risk_class, flagged, mitre_hits, asset_criticality = score(
+        req.data, req.asset_type
+    )
 
     # Compute posture drift
     posture_diff = None
     if prev_scan:
-        import json
         diffs = []
-        old_flagged = [p.strip() for p in (prev_scan.flagged_parameters or "").split(",") if p.strip()]
+        old_flagged = [
+            p.strip()
+            for p in (prev_scan.flagged_parameters or "").split(",")
+            if p.strip()
+        ]
         new_flagged = []
         for p_list in flagged.values():
             new_flagged.extend(p_list)
-        
+
         for p in new_flagged:
             if p not in old_flagged:
                 diffs.append(f"+ {p}")
@@ -210,24 +236,33 @@ async def ingest(
     anomaly_result = detect_anomaly(db, req.host_id, risk_score)
 
     # Upsert machine registry + insert scan row (with anomaly data)
-    machine = crud.upsert_machine(db, req, ip, risk_score, risk_class, asset_criticality)
+    machine = crud.upsert_machine(
+        db, req, ip, risk_score, risk_class, asset_criticality
+    )
     crud.create_scan(
-        db, req, machine.id, ip, risk_score, risk_class, flagged, prev_score,
+        db,
+        req,
+        machine.id,
+        ip,
+        risk_score,
+        risk_class,
+        flagged,
+        prev_score,
         is_anomaly=anomaly_result.is_anomaly,
         anomaly_z_score=anomaly_result.z_score,
-        posture_diff=posture_diff
+        posture_diff=posture_diff,
     )
 
     # Update anomaly streak on machine
     crud.update_anomaly_streak(db, req.host_id, anomaly_result.is_anomaly)
     db.commit()
 
-    anomaly_flag = " ⚠ ANOMALY" if anomaly_result.is_anomaly else ""
+    anomaly_flag = " [ANOMALY]" if anomaly_result.is_anomaly else ""
     print(
-        f"[INGEST] {req.host_id} ({ip}) → "
+        f"[INGEST] {req.host_id} ({ip}) -> "
         f"score={risk_score} class={risk_class} "
         f"z={anomaly_result.z_score}{anomaly_flag} "
-        f"trend={'▲' if prev_score and risk_score > prev_score else '▼' if prev_score and risk_score < prev_score else '='}"
+        f"trend={'UP' if prev_score and risk_score > prev_score else 'DOWN' if prev_score and risk_score < prev_score else '='}"
     )
 
     # Broadcast to WebSocket dashboard clients
@@ -243,28 +278,30 @@ async def ingest(
     anomaly_data = None
     if anomaly_result.z_score is not None:
         anomaly_data = {
-            "is_anomaly":    anomaly_result.is_anomaly,
-            "z_score":       anomaly_result.z_score,
-            "rolling_mean":  anomaly_result.rolling_mean,
-            "rolling_std":   anomaly_result.rolling_std,
-            "direction":     anomaly_result.direction,
+            "is_anomaly": anomaly_result.is_anomaly,
+            "z_score": anomaly_result.z_score,
+            "rolling_mean": anomaly_result.rolling_mean,
+            "rolling_std": anomaly_result.rolling_std,
+            "direction": anomaly_result.direction,
             "scans_analyzed": anomaly_result.scans_analyzed,
         }
 
-    await manager.broadcast({
-        "event": "scan",
-        "hostname": req.host_id,
-        "ip": ip,
-        "os": req.os,
-        "risk_score": risk_score,
-        "risk_class": risk_class,
-        "prev_risk_score": prev_score,
-        "trend": trend,
-        "flagged": flagged,
-        "mitre_hits": mitre_hits,
-        "anomaly": anomaly_data,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+    await manager.broadcast(
+        {
+            "event": "scan",
+            "hostname": req.host_id,
+            "ip": ip,
+            "os": req.os,
+            "risk_score": risk_score,
+            "risk_class": risk_class,
+            "prev_risk_score": prev_score,
+            "trend": trend,
+            "flagged": flagged,
+            "mitre_hits": mitre_hits,
+            "anomaly": anomaly_data,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    )
 
     return ScanResponse(
         message=f"Scan recorded. Risk class: {risk_class}",
@@ -314,13 +351,16 @@ def agent_ack_command(
         raise HTTPException(status_code=404, detail="Command not found")
 
     db.commit()
-    print(f"[ACK] {hostname} cmd={cmd_id} status={ack.status} output={ack.output[:100] if ack.output else ''}")
+    print(
+        f"[ACK] {hostname} cmd={cmd_id} status={ack.status} output={ack.output[:100] if ack.output else ''}"
+    )
     return {"message": f"Command {cmd_id} acknowledged as {ack.status}"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ADMIN AUTH ENDPOINTS
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @app.post("/admin/login", response_model=TokenOut)
 def admin_login(login: AdminLogin, db: Session = Depends(get_db)):
@@ -351,6 +391,7 @@ def admin_me(current_admin: models.AdminUser = Depends(get_current_admin)):
 # ─────────────────────────────────────────────────────────────────────────────
 # ADMIN DASHBOARD ENDPOINTS (protected by JWT Bearer token)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @app.get("/machines", response_model=list[MachineOut])
 def list_machines(
@@ -398,7 +439,7 @@ def get_machine_detail(
     - Trend vs previous scan
     - Pending command count
     """
-    from scoring import PHASES, PARAM_WEIGHTS, MITRE_MAPPING
+    from scoring import PHASES, MITRE_MAPPING
     import json as _json
 
     machine = crud.get_machine(db, hostname)
@@ -408,12 +449,14 @@ def get_machine_detail(
     # Last two scans for trend
     scans = crud.get_scans(db, hostname, limit=2)
     last_scan = scans[0] if scans else None
-    prev_scan  = scans[1] if len(scans) > 1 else None
+    prev_scan = scans[1] if len(scans) > 1 else None
 
     # Reconstruct flagged dict from comma-separated stored string
     flagged: dict[str, list[str]] = {}
     if last_scan and last_scan.flagged_parameters:
-        raw_params = [p.strip() for p in last_scan.flagged_parameters.split(",") if p.strip()]
+        raw_params = [
+            p.strip() for p in last_scan.flagged_parameters.split(",") if p.strip()
+        ]
         for param in raw_params:
             for phase, phase_params in PHASES.items():
                 if param in phase_params:
@@ -438,7 +481,7 @@ def get_machine_detail(
     if last_scan and last_scan.anomaly_z_score is not None:
         anomaly_data = {
             "is_anomaly": last_scan.is_anomaly,
-            "z_score":    last_scan.anomaly_z_score,
+            "z_score": last_scan.anomaly_z_score,
         }
 
     # Recent score history for timeline chart (last 20 scans, oldest first)
@@ -506,10 +549,14 @@ def admin_issue_command(
             detail=f"Command '{body.command_key}' is already pending or executing on {hostname}",
         )
 
-    cmd = crud.queue_command(db, hostname, body.command_key, issued_by=current_admin.username)
+    cmd = crud.queue_command(
+        db, hostname, body.command_key, issued_by=current_admin.username
+    )
     db.commit()
 
-    print(f"[CMD] Admin '{current_admin.username}' queued '{body.command_key}' → {hostname}")
+    print(
+        f"[CMD] Admin '{current_admin.username}' queued '{body.command_key}' → {hostname}"
+    )
     return cmd
 
 
@@ -577,6 +624,7 @@ def get_anomaly_history(
 # WEBSOCKET — Real-time dashboard feed
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.websocket("/ws/live")
 async def websocket_live(websocket: WebSocket):
     """
@@ -586,6 +634,7 @@ async def websocket_live(websocket: WebSocket):
     """
     token = websocket.query_params.get("token", "")
     from auth import decode_token
+
     payload = decode_token(token)
     if not payload:
         await websocket.close(code=4001)
@@ -597,11 +646,15 @@ async def websocket_live(websocket: WebSocket):
         db = SessionLocal()
         try:
             machines = crud.get_all_machines(db)
-            await websocket.send_text(json.dumps({
-                "event": "connected",
-                "machine_count": len(machines),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }))
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "event": "connected",
+                        "machine_count": len(machines),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+            )
         finally:
             db.close()
 
@@ -617,6 +670,7 @@ async def websocket_live(websocket: WebSocket):
 # HEALTH
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.get("/health")
 def health():
     return {
@@ -624,44 +678,58 @@ def health():
         "service": "R3P Backend v2",
         "ws_clients": len(manager.active),
     }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ENTERPRISE FEATURES: Policies, Global Remediation, Analytics
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.get("/policies", response_model=list[PolicyExceptionOut])
-def get_policies(db: Session = Depends(get_db), admin: str = Depends(get_current_admin)):
+def get_policies(
+    db: Session = Depends(get_db), admin: str = Depends(get_current_admin)
+):
     return crud.get_policy_exceptions(db)
+
 
 @app.post("/policies", response_model=PolicyExceptionOut)
 def create_policy(
     policy: PolicyExceptionCreate,
     db: Session = Depends(get_db),
-    admin: str = Depends(get_current_admin)
+    admin: str = Depends(get_current_admin),
 ):
-    return crud.create_policy_exception(db, policy.hostname, policy.param_key, policy.reason)
+    return crud.create_policy_exception(
+        db, policy.hostname, policy.param_key, policy.reason
+    )
+
 
 @app.delete("/policies/{exc_id}")
 def delete_policy(
-    exc_id: int,
-    db: Session = Depends(get_db),
-    admin: str = Depends(get_current_admin)
+    exc_id: int, db: Session = Depends(get_db), admin: str = Depends(get_current_admin)
 ):
     crud.delete_policy_exception(db, exc_id)
     return {"status": "ok"}
+
 
 @app.post("/commands/global")
 def global_remediation(
     req: IssueCommand,
     db: Session = Depends(get_db),
-    admin: str = Depends(get_current_admin)
+    admin: str = Depends(get_current_admin),
 ):
     """Finds all machines that currently have this issue and queues a fix for all."""
     # Find all machines where their *latest* scan has this parameter set to True
     from sqlalchemy import desc
+
     machines = db.query(models.MachineRegistry).all()
     queued_count = 0
     for m in machines:
-        latest = db.query(models.ConfigurationScan).filter_by(hostname=m.hostname).order_by(desc(models.ConfigurationScan.scanned_at)).first()
+        latest = (
+            db.query(models.ConfigurationScan)
+            .filter_by(hostname=m.hostname)
+            .order_by(desc(models.ConfigurationScan.scanned_at))
+            .first()
+        )
         if latest and getattr(latest, req.command_key, False):
             # It has the vulnerability
             if not crud.has_pending_or_executing(db, m.hostname, req.command_key):
@@ -670,21 +738,30 @@ def global_remediation(
     db.commit()
     return {"status": "queued", "count": queued_count}
 
+
 @app.get("/analytics/history")
-def get_analytics_history(db: Session = Depends(get_db), admin: str = Depends(get_current_admin)):
+def get_analytics_history(
+    db: Session = Depends(get_db), admin: str = Depends(get_current_admin)
+):
     """Returns the fleet average risk score by day."""
     from sqlalchemy.sql import func
+
     # Group by date part of scanned_at and avg risk score
     # Note: SQLite uses strftime
     if db.bind.dialect.name == "sqlite":
-        date_expr = func.strftime('%Y-%m-%d', models.ConfigurationScan.scanned_at)
+        date_expr = func.strftime("%Y-%m-%d", models.ConfigurationScan.scanned_at)
     else:
         date_expr = func.date(models.ConfigurationScan.scanned_at)
-        
-    results = db.query(
-        date_expr.label("date"),
-        func.avg(models.ConfigurationScan.risk_score).label("avg_risk")
-    ).group_by(date_expr).order_by(date_expr).all()
-    
+
+    results = (
+        db.query(
+            date_expr.label("date"),
+            func.avg(models.ConfigurationScan.risk_score).label("avg_risk"),
+        )
+        .group_by(date_expr)
+        .order_by(date_expr)
+        .all()
+    )
+
     history = [{"date": str(r.date), "avgRisk": round(r.avg_risk, 2)} for r in results]
     return {"history": history}

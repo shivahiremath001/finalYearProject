@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { API_BASE } from '../App';
+import { API_BASE } from '../constants';
 
 export default function NetworkMapView({ token }) {
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
@@ -14,7 +14,7 @@ export default function NetworkMapView({ token }) {
         height: containerRef.current.clientHeight
       });
     }
-  }, [containerRef.current]);
+  }, []);
 
   useEffect(() => {
     const fetchMachines = async () => {

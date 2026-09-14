@@ -26,36 +26,36 @@ class CollectorData(BaseModel):
     """Inner 'data' block sent by collector.py"""
 
     # ── Fields the current collector already sends ───────────────────────────
-    rdp_open:             Optional[bool] = False
-    firewall_on:          Optional[bool] = True   # True = firewall IS on (safe)
-    patch_age_days:       Optional[int]  = None
-    backup_configured:    Optional[bool] = True
+    rdp_open: Optional[bool] = False
+    firewall_on: Optional[bool] = True  # True = firewall IS on (safe)
+    patch_age_days: Optional[int] = None
+    backup_configured: Optional[bool] = True
 
     # ── Extended fields (future collector versions / manual agents) ──────────
-    smb_v1_enabled:          Optional[bool] = False
-    autorun_enabled:          Optional[bool] = False
-    open_network_shares:      Optional[bool] = False
-    macro_execution_enabled:  Optional[bool] = False
-    powershell_unrestricted:  Optional[bool] = False
-    uac_disabled:             Optional[bool] = False
-    applocker_absent:         Optional[bool] = False
-    defender_disabled:        Optional[bool] = False
-    tamper_protection_off:    Optional[bool] = False
-    event_logging_disabled:   Optional[bool] = False
-    admin_shares_enabled:     Optional[bool] = False
-    lsass_protection_off:     Optional[bool] = False
-    guest_account_active:     Optional[bool] = False
-    vss_deleted:              Optional[bool] = False
-    bitlocker_off:            Optional[bool] = False
-    wdigest_enabled:          Optional[bool] = False
-    laps_absent:              Optional[bool] = False
-    nla_disabled:             Optional[bool] = False
-    always_install_elevated:  Optional[bool] = False
+    smb_v1_enabled: Optional[bool] = False
+    autorun_enabled: Optional[bool] = False
+    open_network_shares: Optional[bool] = False
+    macro_execution_enabled: Optional[bool] = False
+    powershell_unrestricted: Optional[bool] = False
+    uac_disabled: Optional[bool] = False
+    applocker_absent: Optional[bool] = False
+    defender_disabled: Optional[bool] = False
+    tamper_protection_off: Optional[bool] = False
+    event_logging_disabled: Optional[bool] = False
+    admin_shares_enabled: Optional[bool] = False
+    lsass_protection_off: Optional[bool] = False
+    guest_account_active: Optional[bool] = False
+    vss_deleted: Optional[bool] = False
+    bitlocker_off: Optional[bool] = False
+    wdigest_enabled: Optional[bool] = False
+    laps_absent: Optional[bool] = False
+    nla_disabled: Optional[bool] = False
+    always_install_elevated: Optional[bool] = False
 
     # ── Phase 2 BYOVD/EDR-Killer checks ──────────────────────────────────────
     vulnerable_driver_blocklist_enabled: Optional[bool] = False
-    hvci_enabled:             Optional[bool] = False
-    asr_rules_configured:     Optional[bool] = False
+    hvci_enabled: Optional[bool] = False
+    asr_rules_configured: Optional[bool] = False
 
     # ── Phase 3 Active Validation (Mock Attacks) ─────────────────────────────
     mock_attack_vss_enum_blocked: Optional[bool] = None
@@ -64,53 +64,58 @@ class CollectorData(BaseModel):
 
 class IngestRequest(BaseModel):
     """Top-level payload that collector.py POSTs to /ingest"""
-    host_id:   str
-    os:        str
+
+    host_id: str
+    os: str
     asset_type: Optional[str] = "Workstation"
     timestamp: Optional[str] = None
-    ip:        Optional[str] = None   # auto-filled by server if not present
-    data:      CollectorData
+    ip: Optional[str] = None  # auto-filled by server if not present
+    data: CollectorData
 
 
 class ScanResponse(BaseModel):
     """Response sent back to the collector after a successful ingest"""
-    message:    str
-    hostname:   str
+
+    message: str
+    hostname: str
     risk_score: float
     risk_class: str
-    flagged:    dict[str, list[str]]
+    flagged: dict[str, list[str]]
     mitre_hits: list[dict] = []
-    anomaly:    Optional[dict] = None
+    anomaly: Optional[dict] = None
 
 
 class MitreHit(BaseModel):
     """One MITRE ATT&CK technique hit for a flagged parameter"""
-    param_key:      str
-    phase:          str
-    technique_id:   str
+
+    param_key: str
+    phase: str
+    technique_id: str
     technique_name: str
-    tactic:         str
+    tactic: str
 
 
 class AnomalyInfo(BaseModel):
     """Anomaly detection result for a scan"""
-    is_anomaly:    bool = False
-    z_score:       Optional[float] = None
-    rolling_mean:  Optional[float] = None
-    rolling_std:   Optional[float] = None
-    direction:     str = "normal"   # "spike" | "drop" | "normal"
+
+    is_anomaly: bool = False
+    z_score: Optional[float] = None
+    rolling_mean: Optional[float] = None
+    rolling_std: Optional[float] = None
+    direction: str = "normal"  # "spike" | "drop" | "normal"
     scans_analyzed: int = 0
 
 
 class MachineOut(BaseModel):
     """One row in the /machines list"""
-    id:              int
-    hostname:        str
-    ip_address:      str
-    os_version:      Optional[str]
+
+    id: int
+    hostname: str
+    ip_address: str
+    os_version: Optional[str]
     asset_criticality: Optional[float] = 1.0
-    first_seen:      Optional[datetime]
-    last_seen:       Optional[datetime]
+    first_seen: Optional[datetime]
+    last_seen: Optional[datetime]
     last_risk_score: float
     last_risk_class: str
 
@@ -119,14 +124,15 @@ class MachineOut(BaseModel):
 
 class ScanOut(BaseModel):
     """One scan record returned by /machines/{hostname}/scans"""
-    id:               int
-    hostname:         str
-    ip_address:       str
-    scanned_at:       Optional[datetime]
-    risk_score:       float
-    risk_class:       str
+
+    id: int
+    hostname: str
+    ip_address: str
+    scanned_at: Optional[datetime]
+    risk_score: float
+    risk_class: str
     flagged_parameters: str
-    posture_diff:     Optional[str] = None
+    posture_diff: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -135,14 +141,17 @@ class ScanOut(BaseModel):
 # Admin Auth
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class AdminLogin(BaseModel):
     """POST /admin/login body"""
+
     username: str
     password: str
 
 
 class TokenOut(BaseModel):
     """Returned after successful admin login"""
+
     access_token: str
     token_type: str = "bearer"
     username: str
@@ -150,7 +159,8 @@ class TokenOut(BaseModel):
 
 class AdminOut(BaseModel):
     """GET /admin/me response"""
-    id:       int
+
+    id: int
     username: str
     is_active: bool
     model_config = {"from_attributes": True}
@@ -160,37 +170,42 @@ class AdminOut(BaseModel):
 # Remediation Commands
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class IssueCommand(BaseModel):
     """POST /commands/{hostname} — admin queues a fix"""
+
     command_key: str
 
 
 class CommandOut(BaseModel):
     """Returned to agent on GET /commands/{hostname}"""
-    id:          int
+
+    id: int
     command_key: str
-    issued_at:   Optional[datetime]
-    status:      str
+    issued_at: Optional[datetime]
+    status: str
     reboot_required: bool = False
     model_config = {"from_attributes": True}
 
 
 class CommandAck(BaseModel):
     """POST /commands/{hostname}/{id}/ack — agent reports result"""
-    status: str          # 'done' or 'failed'
+
+    status: str  # 'done' or 'failed'
     output: Optional[str] = None
 
 
 class CommandHistoryOut(BaseModel):
     """Full command record for admin history view"""
-    id:           int
-    hostname:     str
-    command_key:  str
-    status:       str
-    issued_at:    Optional[datetime]
+
+    id: int
+    hostname: str
+    command_key: str
+    status: str
+    issued_at: Optional[datetime]
     completed_at: Optional[datetime]
-    output:       Optional[str]
-    issued_by:    str
+    output: Optional[str]
+    issued_by: str
     reboot_required: bool
     model_config = {"from_attributes": True}
 
@@ -212,10 +227,11 @@ class PolicyExceptionOut(BaseModel):
 
 class RemediationCommandDef(BaseModel):
     """Definition of an available remediation command (from allowlist)"""
-    key:         str
-    label:       str
+
+    key: str
+    label: str
     description: str
-    phase:       str
-    severity:    str
-    param_key:   str
+    phase: str
+    severity: str
+    param_key: str
     reboot_required: bool

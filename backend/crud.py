@@ -13,8 +13,14 @@ from datetime import datetime, timezone
 from remediation_registry import get_command
 
 
-def upsert_machine(db: Session, req: IngestRequest, ip: str,
-                   risk_score: float, risk_class: str, asset_criticality: float = 1.0) -> MachineRegistry:
+def upsert_machine(
+    db: Session,
+    req: IngestRequest,
+    ip: str,
+    risk_score: float,
+    risk_class: str,
+    asset_criticality: float = 1.0,
+) -> MachineRegistry:
     """Create or update the machine registry row for this host."""
     machine = db.query(MachineRegistry).filter_by(hostname=req.host_id).first()
     if machine is None:
@@ -26,8 +32,8 @@ def upsert_machine(db: Session, req: IngestRequest, ip: str,
         db.add(machine)
 
     # Always refresh mutable fields
-    machine.ip_address    = ip
-    machine.os_version    = req.os
+    machine.ip_address = ip
+    machine.os_version = req.os
     machine.last_risk_score = risk_score
     machine.last_risk_class = risk_class
     machine.asset_criticality = asset_criticality
@@ -35,64 +41,69 @@ def upsert_machine(db: Session, req: IngestRequest, ip: str,
     return machine
 
 
-def create_scan(db: Session, req: IngestRequest, machine_id: int,
-                ip: str, risk_score: float, risk_class: str,
-                flagged: dict[str, list[str]], prev_score: float | None = None,
-                is_anomaly: bool = False, anomaly_z_score: float | None = None,
-                posture_diff: str | None = None) -> ConfigurationScan:
+def create_scan(
+    db: Session,
+    req: IngestRequest,
+    machine_id: int,
+    ip: str,
+    risk_score: float,
+    risk_class: str,
+    flagged: dict[str, list[str]],
+    prev_score: float | None = None,
+    is_anomaly: bool = False,
+    anomaly_z_score: float | None = None,
+    posture_diff: str | None = None,
+) -> ConfigurationScan:
     """Insert one scan row from an IngestRequest."""
     d = req.data
     scan = ConfigurationScan(
         machine_id=machine_id,
         hostname=req.host_id,
         ip_address=ip,
-
         # Entry Vector
         smb_v1_enabled=d.smb_v1_enabled,
-        rdp_enabled=d.rdp_open,                  # collector name → model name
+        rdp_enabled=d.rdp_open,  # collector name → model name
         autorun_enabled=d.autorun_enabled,
         open_network_shares=d.open_network_shares,
-
         # Execution
         macro_execution_enabled=d.macro_execution_enabled,
         powershell_unrestricted=d.powershell_unrestricted,
         uac_disabled=d.uac_disabled,
         applocker_absent=d.applocker_absent,
-
         # Evasion/Persistence
         defender_disabled=d.defender_disabled,
-        firewall_disabled=not d.firewall_on,      # invert firewall_on
+        firewall_disabled=not d.firewall_on,  # invert firewall_on
         tamper_protection_off=d.tamper_protection_off,
         event_logging_disabled=d.event_logging_disabled,
-
         # Lateral Movement
         admin_shares_enabled=d.admin_shares_enabled,
         lsass_protection_off=d.lsass_protection_off,
         guest_account_active=d.guest_account_active,
-
         # Recovery Prevention
         vss_deleted=d.vss_deleted,
-        backup_absent=not d.backup_configured,     # invert backup_configured
+        backup_absent=not d.backup_configured,  # invert backup_configured
         bitlocker_off=d.bitlocker_off,
-
         # New fields
         wdigest_enabled=d.wdigest_enabled,
         laps_absent=d.laps_absent,
         nla_disabled=d.nla_disabled,
         always_install_elevated=d.always_install_elevated,
-
         # Phase 2 BYOVD & EDR-Killer checks
-        vulnerable_driver_blocklist_enabled=not getattr(d, 'vulnerable_driver_blocklist_enabled', False),
-        hvci_enabled=not getattr(d, 'hvci_enabled', False),
-        asr_rules_configured=not getattr(d, 'asr_rules_configured', False),
-
+        vulnerable_driver_blocklist_enabled=not getattr(
+            d, "vulnerable_driver_blocklist_enabled", False
+        ),
+        hvci_enabled=not getattr(d, "hvci_enabled", False),
+        asr_rules_configured=not getattr(d, "asr_rules_configured", False),
         # Phase 3 Active Validation (Mock Attacks)
-        mock_attack_vss_enum_blocked=getattr(d, 'mock_attack_vss_enum_blocked', None),
-        mock_attack_mass_rename_blocked=getattr(d, 'mock_attack_mass_rename_blocked', None),
-
+        mock_attack_vss_enum_blocked=getattr(d, "mock_attack_vss_enum_blocked", None),
+        mock_attack_mass_rename_blocked=getattr(
+            d, "mock_attack_mass_rename_blocked", None
+        ),
         risk_score=risk_score,
         risk_class=risk_class,
-        flagged_parameters=",".join([item for sublist in flagged.values() for item in sublist]),
+        flagged_parameters=",".join(
+            [item for sublist in flagged.values() for item in sublist]
+        ),
         is_anomaly=is_anomaly,
         anomaly_z_score=anomaly_z_score,
         prev_risk_score=prev_score,
@@ -105,10 +116,12 @@ def create_scan(db: Session, req: IngestRequest, machine_id: int,
 
 def get_latest_scan(db: Session, hostname: str) -> ConfigurationScan | None:
     """Return the most recent scan record for this host."""
-    return db.query(ConfigurationScan)\
-        .filter(ConfigurationScan.hostname == hostname)\
-        .order_by(desc(ConfigurationScan.scanned_at))\
+    return (
+        db.query(ConfigurationScan)
+        .filter(ConfigurationScan.hostname == hostname)
+        .order_by(desc(ConfigurationScan.scanned_at))
         .first()
+    )
 
 
 def get_previous_score(db: Session, hostname: str) -> float | None:
@@ -123,9 +136,9 @@ def get_previous_score(db: Session, hostname: str) -> float | None:
 
 
 def get_all_machines(db: Session) -> list[MachineRegistry]:
-    return db.query(MachineRegistry).order_by(
-        desc(MachineRegistry.last_risk_score)
-    ).all()
+    return (
+        db.query(MachineRegistry).order_by(desc(MachineRegistry.last_risk_score)).all()
+    )
 
 
 def get_machine(db: Session, hostname: str) -> MachineRegistry | None:
@@ -165,7 +178,9 @@ def update_anomaly_streak(db: Session, hostname: str, is_anomaly: bool):
         db.flush()
 
 
-def get_anomaly_scans(db: Session, hostname: str, limit: int = 20) -> list[ConfigurationScan]:
+def get_anomaly_scans(
+    db: Session, hostname: str, limit: int = 20
+) -> list[ConfigurationScan]:
     """Return scans flagged as anomalies for this host."""
     return (
         db.query(ConfigurationScan)
@@ -179,6 +194,7 @@ def get_anomaly_scans(db: Session, hostname: str, limit: int = 20) -> list[Confi
 # ─────────────────────────────────────────────────────────────────────────────
 # Remediation Commands
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def queue_command(
     db: Session, hostname: str, command_key: str, issued_by: str = "admin"
@@ -263,22 +279,33 @@ def has_pending_or_executing(db: Session, hostname: str, command_key: str) -> bo
 # Policy Exceptions
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_policy_exceptions(db: Session, hostname: str = None) -> list[models.PolicyException]:
+
+def get_policy_exceptions(
+    db: Session, hostname: str = None
+) -> list[models.PolicyException]:
     query = db.query(models.PolicyException)
     if hostname:
         query = query.filter(models.PolicyException.hostname == hostname)
     return query.all()
 
-def create_policy_exception(db: Session, hostname: str, param_key: str, reason: str = None) -> models.PolicyException:
-    existing = db.query(models.PolicyException).filter_by(hostname=hostname, param_key=param_key).first()
+
+def create_policy_exception(
+    db: Session, hostname: str, param_key: str, reason: str = None
+) -> models.PolicyException:
+    existing = (
+        db.query(models.PolicyException)
+        .filter_by(hostname=hostname, param_key=param_key)
+        .first()
+    )
     if existing:
         return existing
-    
+
     exc = models.PolicyException(hostname=hostname, param_key=param_key, reason=reason)
     db.add(exc)
     db.commit()
     db.refresh(exc)
     return exc
+
 
 def delete_policy_exception(db: Session, exc_id: int) -> models.PolicyException | None:
     exc = db.query(models.PolicyException).filter_by(id=exc_id).first()
@@ -286,6 +313,7 @@ def delete_policy_exception(db: Session, exc_id: int) -> models.PolicyException 
         db.delete(exc)
         db.commit()
     return exc
+
 
 def seed_dummy_machine(db: Session):
     """Seed a dummy machine into the database for demonstration purposes."""
@@ -296,12 +324,12 @@ def seed_dummy_machine(db: Session):
             ip_address="10.0.0.99",
             os_version="Windows 11 Pro",
             last_risk_score=85.0,
-            last_risk_class="CRITICAL"
+            last_risk_class="CRITICAL",
         )
         db.add(dummy)
         db.commit()
         db.refresh(dummy)
-        
+
         scan = ConfigurationScan(
             machine_id=dummy.id,
             hostname=dummy.hostname,
@@ -316,7 +344,7 @@ def seed_dummy_machine(db: Session):
             risk_score=85.0,
             risk_class="CRITICAL",
             flagged_parameters="smb_v1_enabled,rdp_enabled,autorun_enabled,wdigest_enabled,laps_absent",
-            is_anomaly=False
+            is_anomaly=False,
         )
         db.add(scan)
         db.commit()

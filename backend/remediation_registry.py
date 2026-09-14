@@ -18,9 +18,7 @@ Each entry:
 """
 
 REMEDIATION_COMMANDS: dict[str, dict] = {
-
     # ── Entry Vector ──────────────────────────────────────────────────────────
-
     "disable_smb1": {
         "label": "Disable SMBv1",
         "description": (
@@ -36,7 +34,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-
     "block_rdp": {
         "label": "Disable RDP (Block Port 3389)",
         "description": (
@@ -54,7 +51,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-
     "disable_autorun": {
         "label": "Disable USB AutoRun",
         "description": (
@@ -72,9 +68,7 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-
     # ── Execution ─────────────────────────────────────────────────────────────
-
     "restrict_powershell": {
         "label": "Restrict PowerShell Execution Policy",
         "description": (
@@ -90,7 +84,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-
     "enable_uac": {
         "label": "Enable User Account Control (UAC)",
         "description": (
@@ -107,9 +100,7 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": True,
     },
-
     # ── Evasion & Persistence ─────────────────────────────────────────────────
-
     "enable_defender": {
         "label": "Enable Windows Defender Real-Time Protection",
         "description": (
@@ -126,7 +117,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-
     "enable_firewall": {
         "label": "Enable Windows Firewall (All Profiles)",
         "description": (
@@ -142,7 +132,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-
     "enable_tamper_protection": {
         "label": "Enable Defender Tamper Protection",
         "description": (
@@ -159,7 +148,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-
     "enable_event_log": {
         "label": "Start Windows Event Log Service",
         "description": (
@@ -176,9 +164,7 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-
     # ── Lateral Movement ──────────────────────────────────────────────────────
-
     "disable_guest": {
         "label": "Disable Guest Account",
         "description": (
@@ -194,7 +180,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-
     "enable_lsass_protection": {
         "label": "Enable LSASS PPL Protection",
         "description": (
@@ -211,7 +196,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": True,
     },
-    
     "disable_wdigest": {
         "label": "Disable WDigest Cleartext Credentials",
         "description": (
@@ -228,7 +212,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-    
     "enable_nla": {
         "label": "Enable Network Level Authentication for RDP",
         "description": (
@@ -245,7 +228,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-    
     "disable_always_install_elevated": {
         "label": "Disable AlwaysInstallElevated Policy",
         "description": (
@@ -264,9 +246,7 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": False,
     },
-
     # ── Phase 2 BYOVD & EDR-Killer Fixes ──────────────────────────────────────
-
     "enable_vulnerable_driver_blocklist": {
         "label": "Enable Microsoft Vulnerable Driver Blocklist",
         "description": (
@@ -283,7 +263,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": True,
     },
-
     "enable_hvci": {
         "label": "Enable HVCI (Memory Integrity)",
         "description": (
@@ -300,7 +279,6 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         ),
         "reboot_required": True,
     },
-
     "enable_asr_rules": {
         "label": "Enable Basic ASR Rules (Block Office Macros/Executables)",
         "description": (
@@ -331,6 +309,7 @@ def get_all_commands() -> dict[str, dict]:
 def get_commands_for_param(param_key: str) -> list[tuple[str, dict]]:
     """Returns list of (command_key, command_def) that fix a given parameter."""
     return [
-        (k, v) for k, v in REMEDIATION_COMMANDS.items()
+        (k, v)
+        for k, v in REMEDIATION_COMMANDS.items()
         if v.get("param_key") == param_key
     ]
