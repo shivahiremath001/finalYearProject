@@ -41,23 +41,26 @@ With Phase 3, R3P also introduces **Active Validation**: it safely executes mock
 
 ## Quickstart
 
-### 1. Start the Backend
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt # (or manually install fastapi uvicorn sqlalchemy pyjwt python-dotenv)
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-*Note: Ensure you configure your `.env` file with `API_KEY` and `JWT_SECRET`.*
+## Quickstart (Docker)
 
-### 2. Start the Frontend
+The fastest and most robust way to run R3P is using Docker Compose. This spins up isolated containers for the frontend and backend, seamlessly mapping ports and volumes.
+
 ```bash
-cd frontend
-npm install
-npm run dev
+# Start both the frontend and backend in the background
+docker-compose up -d --build
 ```
-*Dashboard will run on `http://localhost:5173`.*
+* The Dashboard will be available at `http://localhost:5173`
+* The API will be available at `http://localhost:8000`
+
+## Testing
+
+R3P includes an automated unit testing suite (`pytest`) to mathematically verify the risk scoring engine and asset criticality multipliers.
+
+```bash
+# Run tests locally (requires backend venv)
+cd backend
+pytest tests/
+```
 
 ### 3. Run the Agent
 ```bash

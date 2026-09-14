@@ -161,6 +161,21 @@ sequenceDiagram
 
 ---
 
+## Infrastructure & Containerization (Docker)
+
+To ensure academic reproducibility and enterprise-grade robustness, the R3P server architecture is fully containerized using **Docker** and orchestrated via **Docker Compose**.
+
+### Microservice Isolation
+1. **Backend Service (`backend/Dockerfile`)**: Built on `python:3.10-slim`. It completely isolates the FastAPI server, Uvicorn, and Python dependencies, preventing local environment pollution.
+2. **Frontend Service (`frontend/Dockerfile`)**: Built on `node:20-slim`. It isolates the React/Vite development server. A specific `.dockerignore` strategy prevents host `package-lock.json` and native binding conflicts (e.g., `rolldown` linux-x64-gnu mismatches).
+
+### Stateful Data Persistence
+While the containers are ephemeral, the database is stateful. `docker-compose.yml` mounts the host's `backend/` directory into the container's `/app` volume. This provides two massive benefits:
+1. **Live Reloading:** Any code edits made on the host immediately reflect in the container.
+2. **Database Persistence:** The `r3p.db` SQLite file physically resides on the host machine, guaranteeing that telemetry data survives container restarts and image rebuilds.
+
+---
+
 ## Technology Stack
 
 | Layer | Technology | Purpose | Why This Choice |
@@ -175,6 +190,8 @@ sequenceDiagram
 | **Frontend** | React 18 + Vite | Admin dashboard SPA | Component-based, fast hot reload, rich ecosystem |
 | **Real-time** | WebSocket | Live scan event streaming | Native browser support, low latency |
 | **Styling** | Vanilla CSS | Dashboard design system | Full control, no framework overhead |
+| **Containerization** | Docker & Docker Compose | Microservice orchestration | Ensures identical development and production environments, isolates dependencies |
+| **Unit Testing** | PyTest | Mathematical validation | Proves the exactness of the risk scoring and asset criticality algorithms |
 
 ---
 
@@ -279,12 +296,26 @@ Risk Score = (Σ weight_i × failed_i) / (Σ weight_i) × 100
 
 Where:
 - `weight_i` = severity weight of parameter `i` (range: 1–5)
-- `failed_i` = 1 if the check indicates a misconfiguration, 0 otherwise
-- The sum of all weights acts as the denominator.
+- `likelihood_i` = real-world probability of exploitation (range: 0.1–1.0)
+- `AssetCriticality` = context multiplier (Domain Controller = 1.6, Server = 1.3, Workstation = 1.0)
+- The denominator (`max_possible_risk`) is calculated using a baseline criticality of 1.0 to ensure higher criticality assets yield mathematically higher final percentages.
 
 ### Escalation Rule
 
 > If **any single parameter with weight 5** (Critical) fails, the risk classification is escalated to **at least HIGH RISK**, regardless of the numerical score.
+
+---
+
+## Automated Verification & Unit Testing
+
+To prove the mathematical correctness of the Risk Scoring Formula, R3P utilizes the **PyTest** automated testing framework. 
+
+The test suite (`backend/tests/test_scoring.py`) instantiates fake `CollectorData` payloads in memory and asserts that the `scoring.py` engine produces mathematically flawless outputs in under 10 milliseconds. 
+
+**Tested Scenarios:**
+1. **The Baseline:** Asserts that a perfectly secured payload mathematically results in exactly `0.0` risk and a `"SAFE"` classification.
+2. **The Escalation:** Asserts that injecting a single weight-5 vulnerability (e.g., SMBv1) into an otherwise secure machine forces the classification engine to override the baseline and return `"HIGH RISK"`.
+3. **The Multiplier:** Asserts that two identical telemetry payloads passed into the engine yield vastly different scores when one is tagged as a `"Workstation"` and the other as a `"Domain Controller"`, proving the Context-Aware mathematics.
 
 ---
 

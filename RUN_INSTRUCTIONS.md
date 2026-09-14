@@ -2,8 +2,17 @@
 
 This project consists of a Python backend, a Node.js frontend, and uses **Ngrok** to create a secure tunnel for the backend API.
 
-## Quick Start
-The easiest way to run the project is to simply double-click the `run_project.bat` file located in this directory. It will automatically open three separate terminal windows to run the frontend, the backend, and the ngrok tunnel.
+## 1. Quick Start (Recommended - Docker)
+The absolute easiest and most robust way to run the project is using Docker. This ensures you do not run into Python or Node version conflicts.
+
+1. Open a terminal in the root directory.
+2. Run: `docker-compose up -d --build`
+3. The dashboard will be instantly available at `http://localhost:5173`.
+
+---
+
+## 2. Windows Batch File Start
+You can also simply double-click the `run_project.bat` file located in this directory. It will automatically open three separate terminal windows to run the frontend, the backend, and the ngrok tunnel locally.
 
 ## Manual Start
 

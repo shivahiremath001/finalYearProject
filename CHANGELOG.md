@@ -2,6 +2,22 @@
 
 This document tracks all modifications, enhancements, and bug fixes applied to the Ransomware Readiness & Risk Profiler (R3P) codebase.
 
+## [2026-09-14] - Docker Containerization & UI Polish
+
+### 🐳 Infrastructure & DevOps (Docker)
+- **Containerization:** Fully containerized the R3P Admin platform using Docker. Created isolated environments for the FastAPI backend (`python:3.10-slim`) and React frontend (`node:20-slim`).
+- **Orchestration:** Implemented `docker-compose.yml` to orchestrate services, map local volumes for live-reloading, and safely persist the SQLite database to the host machine.
+- **Build Optimization:** Added `.dockerignore` files to both frontend and backend to prevent local environment caches (`node_modules`, `venv`) from polluting the Docker images. Fixed Node native-bindings conflict in the Vite build process.
+
+### 🖥️ Frontend & UI Polish
+- **Policies Dashboard Overhaul:** Refactored `PoliciesView.jsx` to render all 27 vulnerability parameters. Grouped the parameters cleanly by their respective kill-chain phases within the HTML `optgroup` elements.
+- **Aesthetic Refinements:** Added custom CSS (`App.css`) to fix native dropdown styling, ensuring visibility of `optgroup` headers, applying a custom chevron icon, and maintaining a cohesive premium dark-mode aesthetic.
+
+### 🐛 Bug Fixes & Testing
+- **Automated Unit Testing:** Implemented `pytest` for the `scoring.py` risk engine. Tests verify baseline safe scores, critical vulnerability overrides, and asset criticality multiplier logic.
+- **Risk Engine Math Bug:** The new unit tests caught a mathematical flaw where the `asset_criticality` multiplier was accidentally applied to both the numerator and denominator, canceling itself out. Fixed the normalization formula in `scoring.py` so Domain Controllers correctly yield higher severity scores.
+- **Agent Mock Attack Detection:** Fixed a logic flaw in `collector.py` where the VSS Enumeration mock attack was swallowing PowerShell errors. The agent now properly detects if an EDR blocks the mock attack, ensuring accurate telemetry reporting.
+
 ## [2026-09-13] - Phase 1 (Risk Scoring Refactor) & Phase 2 (BYOVD/EDR-Killer Defenses)
 
 ### 📈 Phase 1: Risk Engine & Posture Drift

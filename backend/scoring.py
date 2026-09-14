@@ -398,13 +398,14 @@ def score(
     has_critical_failure = False
     flagged: dict[str, list[str]] = {phase: [] for phase in PHASES}
 
-    # Max possible risk if everything fails
+    # Max possible risk is calculated at baseline 1.0 so that higher 
+    # criticality assets actually score higher on the 0-100 scale.
     max_possible_risk = (
         sum(
             SEVERITY_WEIGHTS.get(k, 0) * LIKELIHOOD_WEIGHTS.get(k, 0)
             for k in SEVERITY_WEIGHTS
         )
-        * asset_criticality
+        * 1.0
     )
 
     for param, is_risky in params.items():
