@@ -82,7 +82,7 @@ function ScoreGauge({ score, riskClass }) {
           transform={`rotate(135,${cx},${cy})`} />
       </svg>
       <div className="gauge-center">
-        <span className="gauge-score">{score}</span>
+        <span className="gauge-score">{Number(score).toFixed(1)}</span>
         <span className="gauge-label">/100</span>
       </div>
     </div>
@@ -434,7 +434,7 @@ function MachineDetail({ machine, token, onClose, liveData, theme }) {
               <span className={`trend-arrow ${trendClass}`}>{trendIcon}</span>
               <span className="muted">vs previous scan</span>
             </div>
-            <p className="score-num">{score} / 100</p>
+            <p className="score-num">{Number(score).toFixed(1)} / 100</p>
             <p className="muted">{totalFlagged} misconfiguration{totalFlagged !== 1 ? 's' : ''} found</p>
             {detail?.scanned_at && <p className="muted">Scanned {timeSince(detail.scanned_at)}</p>}
             {detail?.anomaly_streak > 0 && (
@@ -589,6 +589,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
   const [sortField, setSortField] = useState('last_risk_score')
   const [sortDir, setSortDir] = useState('desc')
   const [searchQ, setSearchQ] = useState('')
+  const [filterRisk, setFilterRisk] = useState(null)
   const [toasts, setToasts] = useState([])
   const [activeTab, setActiveTab] = useState('overview')
   const wsRef = useRef(null)
@@ -672,7 +673,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
   }
 
   const sorted = [...machines]
-    .filter(m => m.hostname.toLowerCase().includes(searchQ.toLowerCase()) || m.ip_address.includes(searchQ))
+    .filter(m => (m.hostname.toLowerCase().includes(searchQ.toLowerCase()) || m.ip_address.includes(searchQ)) && (!filterRisk || m.last_risk_class === filterRisk))
     .sort((a, b) => {
       const av = a[sortField] ?? '', bv = b[sortField] ?? ''
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1)
@@ -758,35 +759,35 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
             </div>
 
             <div className="apple-widgets">
-              <div className="widget widget-hero">
+              <div className={`widget widget-hero ${!filterRisk ? 'widget-active' : ''}`} onClick={() => setFilterRisk(null)} style={{cursor: 'pointer'}}>
                 <div className="stat-header">
                   <div className="stat-label">Total Machines</div>
                   <div className="stat-icon"><Monitor size={18} /></div>
                 </div>
                 <div className="stat-value">{stats.total}</div>
               </div>
-              <div className="widget">
+              <div className={`widget ${filterRisk === 'CRITICAL' ? 'widget-active' : ''}`} onClick={() => setFilterRisk(filterRisk === 'CRITICAL' ? null : 'CRITICAL')} style={{cursor: 'pointer', border: filterRisk === 'CRITICAL' ? '2px solid var(--critical)' : ''}}>
                 <div className="stat-header">
                   <div className="stat-label">Critical</div>
                   <div className="stat-icon"><ShieldAlert size={18} color="var(--critical)" /></div>
                 </div>
                 <div className="stat-value">{stats.critical}</div>
               </div>
-              <div className="widget">
+              <div className={`widget ${filterRisk === 'HIGH RISK' ? 'widget-active' : ''}`} onClick={() => setFilterRisk(filterRisk === 'HIGH RISK' ? null : 'HIGH RISK')} style={{cursor: 'pointer', border: filterRisk === 'HIGH RISK' ? '2px solid var(--high)' : ''}}>
                 <div className="stat-header">
                   <div className="stat-label">High Risk</div>
                   <div className="stat-icon"><TriangleAlert size={18} color="var(--high)" /></div>
                 </div>
                 <div className="stat-value">{stats.high}</div>
               </div>
-              <div className="widget">
+              <div className={`widget ${filterRisk === 'LOW RISK' ? 'widget-active' : ''}`} onClick={() => setFilterRisk(filterRisk === 'LOW RISK' ? null : 'LOW RISK')} style={{cursor: 'pointer', border: filterRisk === 'LOW RISK' ? '2px solid var(--low)' : ''}}>
                 <div className="stat-header">
                   <div className="stat-label">Low Risk</div>
                   <div className="stat-icon"><Info size={18} color="var(--low)" /></div>
                 </div>
                 <div className="stat-value">{stats.low}</div>
               </div>
-              <div className="widget">
+              <div className={`widget ${filterRisk === 'SAFE' ? 'widget-active' : ''}`} onClick={() => setFilterRisk(filterRisk === 'SAFE' ? null : 'SAFE')} style={{cursor: 'pointer', border: filterRisk === 'SAFE' ? '2px solid var(--safe)' : ''}}>
                 <div className="stat-header">
                   <div className="stat-label">Safe</div>
                   <div className="stat-icon"><ShieldCheck size={18} color="var(--safe)" /></div>

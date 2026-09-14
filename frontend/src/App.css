@@ -5,7 +5,7 @@
 :root {
   /* Apple Dark Mode Palette */
   --bg:          #000000; 
-  --card:        rgba(28, 28, 30, 0.6); 
+  --card:        rgba(28, 28, 30, 0.7); 
   --card2:       rgba(44, 44, 46, 0.7); 
   
   --border:      rgba(255, 255, 255, 0.1); 
@@ -41,7 +41,7 @@
 [data-theme="light"] {
   /* Apple Light Mode Palette */
   --bg:          #f2f2f7; 
-  --card:        rgba(255, 255, 255, 0.7); 
+  --card:        rgba(255, 255, 255, 0.8); 
   --card2:       rgba(255, 255, 255, 0.9); 
   
   --border:      rgba(0, 0, 0, 0.1); 
@@ -319,7 +319,7 @@ html, body, #root {
 .toast-close:hover { color: var(--text); }
 
 /* ── Detail Panel (Apple Floating Modal) ──────────────────────────────────── */
-.detail-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; justify-content: center; align-items: center; z-index: 300; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 40px; }
+.detail-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 300; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 40px; }
 .detail-panel {
   width: min(840px, 100%); height: min(90vh, 800px); overflow-y: auto;
   background: var(--card); border-radius: 24px; border: 0.5px solid var(--border);
