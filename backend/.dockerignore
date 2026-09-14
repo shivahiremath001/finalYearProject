@@ -1,0 +1,6 @@
+venv
+__pycache__
+*.pyc
+.env
+r3p.db
+.DS_Store

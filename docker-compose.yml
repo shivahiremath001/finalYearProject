@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=sqlite:///./r3p.db
+    # Ensures the container restarts if it crashes
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      # Map your local frontend folder into the container (Live Reloading)
+      - ./frontend:/app
+      # Prevent the container's node_modules from being overwritten by your host machine
+      - /app/node_modules
+    environment:
+      # Ensures Vite knows where to find the backend
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
