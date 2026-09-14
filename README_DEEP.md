@@ -288,21 +288,42 @@ Every R3P security check maps to one or more **MITRE ATT&CK** techniques. This p
 
 ## Risk Scoring Formula
 
-### Formula
+The R3P scoring engine does not simply count the number of failed checks. It computes a deeply contextual, severity-weighted risk score by evaluating three specific multipliers for every single check.
+
+### 1. The Multipliers
+
+1. **Severity (1.0 to 5.0)**: Measures the raw destructive potential of the misconfiguration.
+   - *Example:* USB AutoRun is a `2.0` (Low). SMBv1 is a `5.0` (Critical) because it allows instant, worm-like network propagation (e.g., WannaCry).
+2. **Likelihood (0.1 to 1.0)**: Measures the statistical probability of real-world exploitation.
+   - *Example:* SMBv1 is devastating but aging, so it carries a `0.4` likelihood. An open RDP port (3389) is the #1 ransomware vector today, carrying a `0.9` likelihood.
+3. **Asset Criticality (1.0 to 1.6)**: Contextualizes the target machine's value.
+   - *Workstation* = `1.0` (Standard employee laptop)
+   - *Server* = `1.3` (Holds departmental data)
+   - *Domain Controller* = `1.6` (The keys to the kingdom)
+
+### 2. The Formula
+
+For every parameter that fails (indicates a misconfiguration), the engine calculates the itemized risk:
 
 ```
-Risk Score = (Σ weight_i × failed_i) / (Σ weight_i) × 100
+Item Risk = Severity × Likelihood × AssetCriticality
 ```
 
-Where:
-- `weight_i` = severity weight of parameter `i` (range: 1–5)
-- `likelihood_i` = real-world probability of exploitation (range: 0.1–1.0)
-- `AssetCriticality` = context multiplier (Domain Controller = 1.6, Server = 1.3, Workstation = 1.0)
-- The denominator (`max_possible_risk`) is calculated using a baseline criticality of 1.0 to ensure higher criticality assets yield mathematically higher final percentages.
+It then calculates the **Max Possible Risk** (the theoretical score if a baseline Workstation failed every single check in the database).
 
-### Escalation Rule
+```
+Final Score = (Σ Item Risk) / (Max Possible Risk) × 100
+```
+This yields a clean, normalized percentage from **0 to 100**.
 
-> If **any single parameter with weight 5** (Critical) fails, the risk classification is escalated to **at least HIGH RISK**, regardless of the numerical score.
+### 3. The "Failsafe" Escalation Rule
+
+Because the final score is an aggregate average, a mathematical loophole exists: A machine could be perfectly secure in 26 categories but fail 1 critical category (e.g., Antivirus completely disabled). Mathematically, the score might be `15/100`, which the system normally classifies as `"SAFE"`. 
+
+**This would be a dangerous false positive.**
+
+To prevent this, R3P employs a failsafe **Escalation Rule**:
+> If the engine detects a failure on **any single parameter with a Weight of 5 (Critical)**, it immediately bypasses the mathematical classification and escalates the machine to **at least HIGH RISK**, regardless of how low the numerical score is.
 
 ---
 

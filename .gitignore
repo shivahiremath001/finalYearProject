@@ -35,6 +35,8 @@ venv.bak/
 r3p_server.txt
 backend/r3p.db
 
+
+
 # VS Code / IDEs
 .vscode/
 .idea/

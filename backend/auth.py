@@ -49,7 +49,7 @@ def verify_password(password: str, hashed: str) -> bool:
         salt, dk_hex = hashed.split(":", 1)
         dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 260000)
         return hmac.compare_digest(dk.hex(), dk_hex)
-    except Exception:
+    except (ValueError, AttributeError):
         return False
 
 
@@ -89,7 +89,7 @@ def decode_token(token: str) -> dict | None:
 
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except Exception:
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, Exception):
         return None
 
 

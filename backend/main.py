@@ -49,6 +49,7 @@ from datetime import datetime, timezone
 import os
 import json
 import asyncio
+from contextlib import asynccontextmanager
 from typing import Set
 
 # Load .env file
@@ -84,7 +85,7 @@ from schemas import (
     PolicyExceptionCreate,
     PolicyExceptionOut,
 )
-from scoring import score, get_mitre_mapping, get_mitre_hits, MITRE_MAPPING
+from scoring import score, get_mitre_mapping, get_mitre_hits, MITRE_MAPPING, PHASES
 import crud
 from auth import (
     verify_password,
@@ -99,10 +100,26 @@ from anomaly import detect_anomaly
 # ── Create all tables on startup ─────────────────────────────────────────────
 models.Base.metadata.create_all(bind=engine)
 
+# ── Lifespan (startup / shutdown logic) ──────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handles all startup and shutdown logic for the application."""
+    # --- Startup ---
+    db = SessionLocal()
+    try:
+        ensure_default_admin(db)
+        crud.seed_dummy_machine(db)
+    finally:
+        db.close()
+    yield
+    # --- Shutdown (add cleanup here if needed in future) ---
+
+
 app = FastAPI(
     title="R3P — Ransomware Readiness & Risk Profiler",
     description="Receives telemetry from Windows agents, scores security posture, and enables remote remediation.",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 # ── CORS: allow the React frontend ───────────────────────────────────────────
@@ -164,16 +181,6 @@ def get_api_key(api_key: str = Security(api_key_header)):
     return api_key
 
 
-# ── Startup event: seed default admin ────────────────────────────────────────
-@app.on_event("startup")
-def startup_event():
-    db = SessionLocal()
-    try:
-        ensure_default_admin(db)
-        crud.seed_dummy_machine(db)
-    finally:
-        db.close()
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # AGENT ENDPOINTS (protected by X-API-Key)
@@ -202,8 +209,8 @@ async def ingest(
     exceptions = crud.get_policy_exceptions(db, req.host_id)
     exc_keys = [e.param_key for e in exceptions]
     for key in exc_keys:
-        if key in req.data:
-            req.data[key] = False  # Safelist this parameter
+        if hasattr(req.data, key):
+            setattr(req.data, key, False)  # Safelist this parameter
 
     # Score the machine
     risk_score, risk_class, flagged, mitre_hits, asset_criticality = score(
@@ -439,9 +446,6 @@ def get_machine_detail(
     - Trend vs previous scan
     - Pending command count
     """
-    from scoring import PHASES, MITRE_MAPPING
-    import json as _json
-
     machine = crud.get_machine(db, hostname)
     if not machine:
         raise HTTPException(status_code=404, detail="Machine not found")

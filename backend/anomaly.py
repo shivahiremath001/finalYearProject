@@ -88,8 +88,9 @@ def detect_anomaly(
         )
 
     # Compute rolling mean and standard deviation
+    # Using Bessel's correction (n-1) for unbiased sample standard deviation
     mean = sum(historical_scores) / n
-    variance = sum((s - mean) ** 2 for s in historical_scores) / n
+    variance = sum((s - mean) ** 2 for s in historical_scores) / (n - 1)
     std = math.sqrt(variance)
 
     # Handle zero standard deviation (all scores identical)
