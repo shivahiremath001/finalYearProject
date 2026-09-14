@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, ChevronDown } from 'lucide-react';
 import { API_BASE } from '../constants';
 
 export default function PoliciesView({ token }) {
@@ -106,30 +106,61 @@ export default function PoliciesView({ token }) {
             <form onSubmit={handleCreate} className="login-form">
               <div className="field">
                 <label>Target Machine</label>
-                <select value={newPolicy.hostname} onChange={e => setNewPolicy({...newPolicy, hostname: e.target.value})} className="search-input" style={{ width: '100%', background: 'var(--overlay)' }}>
-                  {machines.map(m => (
-                    <option key={m.hostname} value={m.hostname}>{m.hostname} ({m.ip_address})</option>
-                  ))}
-                </select>
+                <div style={{ position: 'relative' }}>
+                  <select value={newPolicy.hostname} onChange={e => setNewPolicy({...newPolicy, hostname: e.target.value})} className="search-input" style={{ width: '100%', background: 'var(--overlay)', cursor: 'pointer' }}>
+                    {machines.map(m => (
+                      <option key={m.hostname} value={m.hostname}>{m.hostname} ({m.ip_address})</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={16} color="var(--subtle)" style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                </div>
               </div>
               <div className="field">
                 <label>Vulnerability Parameter</label>
-                <select value={newPolicy.param_key} onChange={e => setNewPolicy({...newPolicy, param_key: e.target.value})} className="search-input" style={{ width: '100%', background: 'var(--overlay)' }}>
-                  <option value="smb_v1_enabled">SMBv1 Enabled</option>
-                  <option value="rdp_enabled">RDP Exposed</option>
-                  <option value="defender_disabled">Defender Disabled</option>
-                  <option value="firewall_disabled">Firewall Disabled</option>
-                  <option value="admin_shares_enabled">Admin Shares Enabled</option>
-                  <option value="wdigest_enabled">WDigest Credentials Enabled</option>
-                  <option value="laps_absent">LAPS Absent</option>
-                  <option value="nla_disabled">RDP NLA Disabled</option>
-                  <option value="always_install_elevated">AlwaysInstallElevated Enabled</option>
-                  <option value="vulnerable_driver_blocklist_enabled">Vulnerable Driver Blocklist Disabled (BYOVD Risk)</option>
-                  <option value="hvci_enabled">HVCI Memory Integrity Disabled</option>
-                  <option value="asr_rules_configured">ASR Rules Not Configured</option>
-                  <option value="mock_attack_vss_enum_succeeded">Failed Mock Attack: VSS Enumeration (Ransomware Behavior)</option>
-                  <option value="mock_attack_mass_rename_succeeded">Failed Mock Attack: Mass File Rename (Ransomware Behavior)</option>
-                </select>
+                <div style={{ position: 'relative' }}>
+                  <select value={newPolicy.param_key} onChange={e => setNewPolicy({...newPolicy, param_key: e.target.value})} className="search-input" style={{ width: '100%', background: 'var(--overlay)', cursor: 'pointer' }}>
+                    <optgroup label="Entry Vector">
+                    <option value="smb_v1_enabled">SMBv1 Enabled</option>
+                    <option value="rdp_enabled">RDP Exposed</option>
+                    <option value="autorun_enabled">AutoRun Enabled</option>
+                    <option value="open_network_shares">Open Network Shares</option>
+                    <option value="nla_disabled">RDP NLA Disabled</option>
+                  </optgroup>
+                  <optgroup label="Execution">
+                    <option value="macro_execution_enabled">Macro Execution Enabled</option>
+                    <option value="powershell_unrestricted">PowerShell Unrestricted</option>
+                    <option value="uac_disabled">UAC Disabled</option>
+                    <option value="applocker_absent">AppLocker Absent</option>
+                    <option value="always_install_elevated">AlwaysInstallElevated Enabled</option>
+                  </optgroup>
+                  <optgroup label="Evasion & Persistence">
+                    <option value="defender_disabled">Defender Disabled</option>
+                    <option value="firewall_disabled">Firewall Disabled</option>
+                    <option value="tamper_protection_off">Tamper Protection Off</option>
+                    <option value="event_logging_disabled">Event Logging Disabled</option>
+                    <option value="vulnerable_driver_blocklist_enabled">Vulnerable Driver Blocklist Disabled (BYOVD Risk)</option>
+                    <option value="hvci_enabled">HVCI Memory Integrity Disabled</option>
+                    <option value="asr_rules_configured">ASR Rules Not Configured</option>
+                  </optgroup>
+                  <optgroup label="Lateral Movement">
+                    <option value="admin_shares_enabled">Admin Shares Enabled</option>
+                    <option value="lsass_protection_off">LSASS Protection Off</option>
+                    <option value="guest_account_active">Guest Account Active</option>
+                    <option value="wdigest_enabled">WDigest Credentials Enabled</option>
+                    <option value="laps_absent">LAPS Absent</option>
+                  </optgroup>
+                  <optgroup label="Recovery Prevention">
+                    <option value="vss_deleted">VSS Deleted</option>
+                    <option value="backup_absent">Backup Absent</option>
+                    <option value="bitlocker_off">BitLocker Off</option>
+                  </optgroup>
+                  <optgroup label="Active Validation (Mock Attacks)">
+                    <option value="mock_attack_vss_enum_succeeded">Failed Mock Attack: VSS Enumeration (Ransomware Behavior)</option>
+                    <option value="mock_attack_mass_rename_succeeded">Failed Mock Attack: Mass File Rename (Ransomware Behavior)</option>
+                  </optgroup>
+                  </select>
+                  <ChevronDown size={16} color="var(--subtle)" style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                </div>
               </div>
               <div className="field">
                 <label>Business Justification (Reason)</label>

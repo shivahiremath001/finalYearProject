@@ -192,6 +192,9 @@ html, body, #root {
   outline: none; width: 280px; transition: 0.2s;
 }
 .search-input:focus { background: var(--overlay-heavy); }
+select.search-input { appearance: none; -webkit-appearance: none; -moz-appearance: none; }
+select.search-input option { background: var(--bg); color: var(--text); }
+select.search-input optgroup { background: var(--bg); color: var(--subtle); font-style: normal; font-weight: bold; }
 
 /* ── Apple-Style Widget Grid ─────────────────────────────────────────────── */
 .apple-widgets { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr 1fr; gap: 16px; }
@@ -230,7 +233,7 @@ html, body, #root {
 .machine-row:last-child td { border-bottom: none; }
 .machine-row-active { background: var(--card2) !important; }
 .empty-row { text-align: center; padding: 64px !important; color: var(--subtle); font-size: 15px; }
-.hostname-cell { font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; display: flex; align-items: center; }
+.hostname-cell { font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
 .os-cell { font-size: 13px; color: var(--subtle); margin-top: 4px; }
 
 /* Online dots */

@@ -840,14 +840,16 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
                           onClick={() => setSelected(m.hostname)}>
                           <td><span className={`row-dot ${offline ? 'offline' : 'online'}`} /></td>
                           <td className="hostname-cell">
-                            <strong>{m.hostname}</strong>
-                            {hasAnomaly && <span className="anomaly-indicator" title="Posture drift detected"><TriangleAlert size={14} color="var(--critical)" style={{marginLeft: 8, verticalAlign: 'text-bottom'}} /></span>}
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                              <span style={{ fontFamily: 'Roboto, sans-serif' }}>{m.hostname}</span>
+                              {hasAnomaly && <span className="anomaly-indicator" title="Posture drift detected"><TriangleAlert size={14} color="var(--critical)" style={{marginLeft: 8}} /></span>}
+                            </div>
                           </td>
                           <td className="muted">{m.ip_address}</td>
                           <td className="muted os-cell">{m.os_version || '—'}</td>
                           <td>
                             <div className="score-bar-wrap">
-                              <span className="score-num-sm">{score}</span>
+                              <span className="score-num-sm">{Number(score).toFixed(1)}</span>
                               <div className="score-bar-bg">
                                 <div className={`score-bar-fill ${RISK_CLASS_COLOR[cls] || ''}`}
                                   style={{ width: `${score}%` }} />

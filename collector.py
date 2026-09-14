@@ -571,11 +571,18 @@ def run_mock_attack_vss_enum() -> bool:
     Simulates ransomware looking for Shadow Copies to delete.
     Returns True if BLOCKED (Safe), False if SUCCEEDED (Risky).
     """
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     try:
-        _ps("Get-WmiObject Win32_ShadowCopy -ErrorAction Stop")
-        # If it throws an exception (e.g. access denied by ASR/EDR), it goes to except
-        # If it completes, it wasn't blocked.
-        return False
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", "Get-WmiObject Win32_ShadowCopy -ErrorAction Stop"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=flags,
+        )
+        if r.returncode != 0:
+            return True # Blocked by ASR/EDR
+        return False # Succeeded
     except Exception:
         return True
 
