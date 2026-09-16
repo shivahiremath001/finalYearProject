@@ -8,3 +8,4 @@ websockets==13.1
 psycopg2-binary>=2.9.9
 alembic>=1.13.1
 pytest>=8.0.0
+fpdf2>=2.7.9

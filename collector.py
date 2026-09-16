@@ -739,6 +739,27 @@ def run_all_checks(status_cb=None) -> dict:
 
 
 # ── REMEDIATION EXECUTOR ──────────────────────────────────────────────────────
+AGENT_REMEDIATION = {
+    "disable_smb1": "Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force; Write-Output 'SMBv1 disabled successfully.'",
+    "block_rdp": "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue; Write-Output 'RDP disabled.'",
+    "disable_autorun": "$path = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; If (!(Test-Path $path)) { New-Item -Path $path -Force }; Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord; Write-Output 'AutoRun disabled.'",
+    "restrict_powershell": "Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force; Write-Output 'PowerShell policy updated.'",
+    "enable_uac": "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'EnableLUA' -Value 1; Write-Output 'UAC enabled.'",
+    "enable_defender": "Set-MpPreference -DisableRealtimeMonitoring $false; Start-Service -Name WinDefend -ErrorAction SilentlyContinue; Write-Output 'Defender enabled.'",
+    "enable_firewall": "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True; Write-Output 'Firewall enabled.'",
+    "enable_tamper_protection": "Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue; Write-Output 'Tamper Protection set.'",
+    "enable_event_log": "Set-Service -Name 'eventlog' -StartupType Automatic; Start-Service -Name 'eventlog'; Write-Output 'Event log started.'",
+    "disable_guest": "Disable-LocalUser -Name 'Guest' -ErrorAction SilentlyContinue; Write-Output 'Guest disabled.'",
+    "enable_lsass_protection": "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa' -Name 'RunAsPPL' -Value 1 -Type DWord; Write-Output 'LSASS protection enabled.'",
+    "disable_wdigest": "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' -Name 'UseLogonCredential' -Value 0 -Type DWord; Write-Output 'WDigest disabled.'",
+    "enable_nla": "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' -Name 'UserAuthentication' -Value 1 -Type DWord; Write-Output 'NLA enabled.'",
+    "disable_always_install_elevated": "Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; Write-Output 'AlwaysInstallElevated disabled.'",
+    "enable_vulnerable_driver_blocklist": "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CI\\Config' -Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord; Write-Output 'Blocklist enabled.'",
+    "enable_hvci": "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity' -Name 'Enabled' -Value 1 -Type DWord; Write-Output 'HVCI enabled.'",
+    "enable_asr_rules": "Add-MpPreference -AttackSurfaceReductionRules_Ids 'd4f940ab-401b-4efc-aadc-ad5f3c50688a' -AttackSurfaceReductionRules_Actions Enabled; Write-Output 'Basic ASR Rules enabled.'",
+}
+
+
 def execute_remediation(cmd_key: str) -> tuple[bool, str]:
     """
     Look up the PowerShell command from the LOCAL allowlist and execute it.

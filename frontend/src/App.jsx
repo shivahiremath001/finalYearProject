@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { 
   Shield, ShieldAlert, TriangleAlert, Info, ShieldCheck, Monitor, Clock, Settings, 
   CheckCircle2, XCircle, TrendingUp, TrendingDown, Minus, Circle, User, Zap, X, 
-  Crosshair, Activity, Map, FileKey, LogOut
+  Crosshair, Activity, Map, FileKey, LogOut, Download
 } from 'lucide-react'
 import './App.css'
 
@@ -614,6 +614,46 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
 
   useEffect(() => { fetchMachines() }, [fetchMachines])
 
+  const handleDownloadReport = async () => {
+    try {
+      addToast('info', 'Generating Report', 'Your daily report is being generated...')
+      const res = await apiFetch('/reports/daily/download', { method: 'GET' }, token)
+      if (!res.ok) throw new Error('Failed to download report')
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `R3P_Daily_Report_${new Date().toISOString().split('T')[0]}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      addToast('success', 'Download Complete', 'Daily report downloaded successfully.')
+    } catch (err) {
+      addToast('error', 'Download Failed', 'Could not generate the daily report.')
+    }
+  }
+
+  const handleDownloadDummy = async () => {
+    try {
+      addToast('info', 'Fetching Demo Report', 'Loading the dummy report preview...')
+      const res = await apiFetch('/reports/dummy/download', { method: 'GET' }, token)
+      if (!res.ok) throw new Error('Dummy report not found')
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'R3P_Dummy_Report_Preview.pdf'
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      addToast('success', 'Demo Downloaded', 'Dummy report preview downloaded.')
+    } catch (err) {
+      addToast('error', 'Download Failed', 'Could not fetch the dummy report.')
+    }
+  }
+
   // WebSocket
   useEffect(() => {
     const wsUrl = `${API_BASE.replace(/^http/, 'ws')}/ws/live?token=${token}&ngrok-skip-browser-warning=true`
@@ -751,6 +791,12 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
             <div className="main-header">
               <h1 className="page-title">Fleet Overview</h1>
               <div className="fleet-controls">
+                <button id="download-daily-report-btn" className="btn btn-primary btn-sm" onClick={handleDownloadReport} style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
+                  <Download size={14} /> Daily Report
+                </button>
+                <button id="download-dummy-report-btn" className="btn btn-ghost btn-sm" onClick={handleDownloadDummy} style={{display: 'flex', alignItems: 'center', gap: '6px'}} title="Download dummy/preview report">
+                  <Download size={14} /> Preview Report
+                </button>
                 <input id="search-machines" type="text" className="search-input"
                   placeholder="Search hostname or IP…"
                   value={searchQ} onChange={e => setSearchQ(e.target.value)} />

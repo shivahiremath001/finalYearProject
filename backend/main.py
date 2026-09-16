@@ -41,6 +41,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.responses import FileResponse
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
@@ -96,6 +97,7 @@ from auth import (
 )
 from remediation_registry import get_all_commands, get_command
 from anomaly import detect_anomaly
+from report_generator import generate_daily_report
 
 # ── Create all tables on startup ─────────────────────────────────────────────
 models.Base.metadata.create_all(bind=engine)
@@ -593,6 +595,43 @@ def list_available_remediations(
         )
         for k, v in cmds.items()
     ]
+
+
+@app.get("/reports/daily/download")
+def download_daily_report(
+    db: Session = Depends(get_db),
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    """Generates and returns the daily report PDF."""
+    try:
+        filepath = generate_daily_report(db)
+        return FileResponse(
+            path=filepath,
+            filename=os.path.basename(filepath),
+            media_type="application/pdf"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {e}")
+
+
+@app.get("/reports/dummy/download")
+def download_dummy_report(
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    """Returns the latest pre-generated dummy PDF report for structure preview."""
+    reports_dir = os.path.join(os.path.dirname(__file__), "reports")
+    dummy_files = sorted(
+        [f for f in os.listdir(reports_dir) if f.startswith("dummy_report")],
+        reverse=True,
+    )
+    if not dummy_files:
+        raise HTTPException(status_code=404, detail="No dummy report found. Run generate_dummy_report.py first.")
+    filepath = os.path.join(reports_dir, dummy_files[0])
+    return FileResponse(
+        path=filepath,
+        filename="R3P_Dummy_Report_Preview.pdf",
+        media_type="application/pdf"
+    )
 
 
 @app.get("/mitre/mapping")
