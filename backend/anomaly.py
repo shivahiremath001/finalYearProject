@@ -19,7 +19,8 @@ Algorithm:
 
 Edge cases:
     - Fewer than MIN_HISTORY (3) scans → no anomaly detection (insufficient data)
-    - σ = 0 (all scores identical) → only flag if score changed at all
+    - σ = 0 (all scores identical) → addressed by std floor (sigma_eff = max(sigma, 1.0))
+    - If a remediation command was successfully executed in the last 5 minutes and the score dropped, the anomaly is labeled as expected ("remediation_applied").
 """
 
 import math
@@ -61,7 +62,8 @@ def detect_anomaly(
     Returns:
         AnomalyResult with z-score, rolling stats, and anomaly flag
     """
-    from models import ConfigurationScan
+    from models import ConfigurationScan, RemediationCommand
+    from datetime import datetime, timezone, timedelta
 
     # Query the last N risk scores for this machine (excluding the current scan
     # which hasn't been inserted yet)
@@ -93,33 +95,14 @@ def detect_anomaly(
     variance = sum((s - mean) ** 2 for s in historical_scores) / (n - 1)
     std = math.sqrt(variance)
 
-    # Handle zero standard deviation (all scores identical)
-    if std == 0.0:
-        # If current score differs from the constant mean, it's a notable change
-        # but we can't compute a meaningful z-score
-        if current_score != mean:
-            z = float("inf") if current_score > mean else float("-inf")
-            direction = "spike" if current_score > mean else "drop"
-            return AnomalyResult(
-                is_anomaly=True,
-                z_score=round(z, 4) if math.isfinite(z) else (99.0 if z > 0 else -99.0),
-                rolling_mean=round(mean, 2),
-                rolling_std=0.0,
-                direction=direction,
-                scans_analyzed=n,
-            )
-        else:
-            return AnomalyResult(
-                is_anomaly=False,
-                z_score=0.0,
-                rolling_mean=round(mean, 2),
-                rolling_std=0.0,
-                direction="normal",
-                scans_analyzed=n,
-            )
+    # Use a standard deviation floor (sigma_eff = max(std, 1.0)).
+    # This prevents zero-variance histories from throwing +/- inf or 999 z-scores
+    # on minor 0.1 score fluctuations. A score must change by at least 1.0
+    # multiplied by the Z_THRESHOLD to be considered anomalous.
+    sigma_eff = max(std, 1.0)
 
-    # Compute z-score
-    z = (current_score - mean) / std
+    # Compute z-score using effective sigma
+    z = (current_score - mean) / sigma_eff
 
     # Determine direction and anomaly flag
     is_anomaly = abs(z) > Z_THRESHOLD
@@ -129,6 +112,24 @@ def detect_anomaly(
         direction = "drop"
     else:
         direction = "normal"
+
+    # If the score dropped (anomaly or not), check if a remediation command
+    # was completed successfully ("done") within the last 5 minutes.
+    if direction == "drop" and is_anomaly:
+        recent_cmd = (
+            db.query(RemediationCommand)
+            .filter(RemediationCommand.hostname == hostname)
+            .filter(RemediationCommand.status == "done")
+            .filter(RemediationCommand.completed_at != None)
+            .order_by(desc(RemediationCommand.completed_at))
+            .first()
+        )
+        if recent_cmd:
+            completed_ts = recent_cmd.completed_at.replace(tzinfo=timezone.utc).timestamp() if recent_cmd.completed_at.tzinfo is None else recent_cmd.completed_at.timestamp()
+            now_ts = datetime.now(timezone.utc).timestamp()
+            if now_ts - completed_ts <= 300:  # 5 minutes
+                is_anomaly = False
+                direction = "remediation_applied"
 
     return AnomalyResult(
         is_anomaly=is_anomaly,

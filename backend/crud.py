@@ -37,6 +37,7 @@ def upsert_machine(
     machine.last_risk_score = risk_score
     machine.last_risk_class = risk_class
     machine.asset_criticality = asset_criticality
+    machine.status = "ONLINE"
     db.flush()
     return machine
 
@@ -313,6 +314,33 @@ def delete_policy_exception(db: Session, exc_id: int) -> models.PolicyException 
         db.delete(exc)
         db.commit()
     return exc
+
+
+def mark_offline_machines(db: Session, cutoff_seconds: int = 150) -> list[str]:
+    """
+    Marks machines as OFFLINE if they haven't been seen in cutoff_seconds.
+    Returns a list of hostnames that were just marked offline.
+    """
+    cutoff = datetime.now(timezone.utc).timestamp() - cutoff_seconds
+    offline_hosts = []
+    machines = db.query(MachineRegistry).filter(MachineRegistry.status == "ONLINE").all()
+    for m in machines:
+        if m.last_seen:
+            # SQLAlchemy DateTime with timezone=True needs care, but we assume it's UTC
+            try:
+                # If last_seen is naive, assume UTC
+                if m.last_seen.tzinfo is None:
+                    last_seen_ts = m.last_seen.replace(tzinfo=timezone.utc).timestamp()
+                else:
+                    last_seen_ts = m.last_seen.timestamp()
+            except Exception:
+                continue
+            if last_seen_ts < cutoff:
+                m.status = "OFFLINE"
+                offline_hosts.append(m.hostname)
+    if offline_hosts:
+        db.commit()
+    return offline_hosts
 
 
 def seed_dummy_machine(db: Session):

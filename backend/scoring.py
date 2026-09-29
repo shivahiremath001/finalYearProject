@@ -1,17 +1,22 @@
 """
 scoring.py — Risk scoring engine with MITRE ATT&CK mapping.
 
-Maps the 18 security parameters (+ collector.py's fields) to a severity-weighted
-risk score (0–100) and classifies each machine as SAFE / LOW RISK / HIGH RISK / CRITICAL.
+Maps all 27 security parameters to a severity-weighted risk score (0–100)
+and classifies each machine as SAFE / LOW RISK / HIGH RISK / CRITICAL.
 
-Each parameter is mapped to a MITRE ATT&CK technique ID for industry-standard context.
+Formula per failed check:
+    contribution = Severity(S) * Likelihood(L) * AssetCriticality(C)
 
-Weighting Rationale:
-Each check is assigned a severity weight from 1 to 5:
-  Weight 5 (Critical): e.g., LSASS disabled, backups/VSS deleted, SMBv1 enabled.
-  Weight 1-4 (Lower impact): e.g., AutoRun enabled, Guest account active.
-The final score is normalized to 100. If any single check with weight 5 fails,
-the result is escalated to at least "HIGH RISK" regardless of the total score.
+Risk_max is derived DYNAMICALLY at import time:
+    Risk_max = sum(S * L for all 27 parameters) with C = 1.0 (Workstation baseline)
+
+Normalized score R = min(100, Risk_raw / Risk_max * 100)
+
+Classification (matches project specification):
+    CRITICAL  : R >= 75 OR any mock attack succeeded
+    HIGH RISK : R >= 50 OR any S=5 failure present
+    LOW RISK  : R >= 25
+    SAFE      : R <  25 AND no S=5 failure
 """
 
 from schemas import CollectorData
@@ -129,6 +134,31 @@ LIKELIHOOD_WEIGHTS: dict[str, float] = {
     "mock_attack_vss_enum_succeeded": 1.0,  # If it succeeded, defense absolutely failed
     "mock_attack_mass_rename_succeeded": 1.0,  # If it succeeded, defense absolutely failed
 }
+
+# ── Dynamic Risk_max ──────────────────────────────────────────────────────────
+# Computed once at import time from the weight tables above (C = 1.0 baseline).
+# Verified value for these 27 weights = 80.30
+RISK_MAX: float = sum(
+    SEVERITY_WEIGHTS[k] * LIKELIHOOD_WEIGHTS[k] for k in SEVERITY_WEIGHTS
+)
+
+# ── Startup Validation ────────────────────────────────────────────────────────
+# Ensure every parameter that is scored appears in BOTH weight tables.
+# Raises a clear error at startup if the schema grows without updating weights.
+_missing_s = [k for k in LIKELIHOOD_WEIGHTS if k not in SEVERITY_WEIGHTS]
+_missing_l = [k for k in SEVERITY_WEIGHTS if k not in LIKELIHOOD_WEIGHTS]
+if _missing_s or _missing_l:
+    raise RuntimeError(
+        f"[scoring.py] Weight table mismatch at startup!\n"
+        f"  Missing from SEVERITY_WEIGHTS:   {_missing_s}\n"
+        f"  Missing from LIKELIHOOD_WEIGHTS: {_missing_l}"
+    )
+
+_ALL_SCORED_PARAMS = list(SEVERITY_WEIGHTS.keys())
+assert len(_ALL_SCORED_PARAMS) == 27, (
+    f"[scoring.py] Expected 27 scored parameters, found {len(_ALL_SCORED_PARAMS)}. "
+    "Update the weight tables."
+)
 
 # ── MITRE ATT&CK Mapping ──────────────────────────────────────────────────────
 # Reference: MITRE ATT&CK® Framework v15 — https://attack.mitre.org/
@@ -380,9 +410,47 @@ def get_asset_criticality(asset_type: str) -> float:
         return 1.0
 
 
+
+def explain_score(
+    params: dict[str, bool], asset_criticality: float
+) -> list[dict]:
+    """
+    Return per-parameter risk contributions sorted by contribution descending.
+
+    Each element:
+        param      — parameter name
+        severity   — S weight
+        likelihood — L weight
+        contribution — S * L * C (raw risk points added to total_risk)
+        is_failed  — whether this param was flagged True (risky)
+
+    Useful for viva demonstration and API transparency (top_contributors field).
+    """
+    contributions = []
+    for param, is_risky in params.items():
+        s = SEVERITY_WEIGHTS.get(param, 0.0)
+        l = LIKELIHOOD_WEIGHTS.get(param, 0.0)
+        contrib = round(s * l * asset_criticality, 4) if is_risky else 0.0
+        mitre = MITRE_MAPPING.get(param, {})
+        contributions.append(
+            {
+                "param": param,
+                "severity": s,
+                "likelihood": l,
+                "contribution": contrib,
+                "is_failed": is_risky,
+                "technique_id": mitre.get("technique_id", ""),
+                "tactic": mitre.get("tactic", ""),
+            }
+        )
+    # Sort by contribution descending (failed params first, then by S*L)
+    contributions.sort(key=lambda x: x["contribution"], reverse=True)
+    return contributions
+
+
 def score(
     data: CollectorData, asset_type: str = "Workstation"
-) -> tuple[float, str, dict[str, list[str]], list[dict], float]:
+) -> tuple[float, str, dict[str, list[str]], list[dict], float, list[dict]]:
     """
     Returns:
         risk_score   (0.0 – 100.0)
@@ -396,17 +464,13 @@ def score(
 
     total_risk = 0.0
     has_critical_failure = False
+    has_mock_attack_success = False
     flagged: dict[str, list[str]] = {phase: [] for phase in PHASES}
 
-    # Max possible risk is calculated at baseline 1.0 so that higher 
-    # criticality assets actually score higher on the 0-100 scale.
-    max_possible_risk = (
-        sum(
-            SEVERITY_WEIGHTS.get(k, 0) * LIKELIHOOD_WEIGHTS.get(k, 0)
-            for k in SEVERITY_WEIGHTS
-        )
-        * 1.0
-    )
+    # RISK_MAX is pre-computed at module load time (no hardcoded value).
+    # Uses C = 1.0 (Workstation baseline) so higher-criticality assets
+    # score proportionally higher on the same 0-100 scale.
+    max_possible_risk = RISK_MAX
 
     for param, is_risky in params.items():
         if is_risky:
@@ -419,6 +483,9 @@ def score(
 
             if severity == 5.0:
                 has_critical_failure = True
+            # Track mock-attack success for CRITICAL escalation
+            if param in ("mock_attack_vss_enum_succeeded", "mock_attack_mass_rename_succeeded"):
+                has_mock_attack_success = True
             for phase, p_list in PHASES.items():
                 if param in p_list:
                     flagged[phase].append(param)
@@ -433,21 +500,30 @@ def score(
     )
     normalized_score = min(normalized_score, 100.0)
 
-    if normalized_score < 20:
-        risk_class = "SAFE"
-    elif normalized_score < 50:
-        risk_class = "LOW RISK"
-    elif normalized_score < 80:
+    # ── Classification — matches project specification exactly ──────────────
+    # Primary bands by numeric score
+    if normalized_score >= 75:
+        risk_class = "CRITICAL"
+    elif normalized_score >= 50:
         risk_class = "HIGH RISK"
+    elif normalized_score >= 25:
+        risk_class = "LOW RISK"
     else:
+        risk_class = "SAFE"
+
+    # Escalation rule 1: any mock attack succeeded → CRITICAL
+    if has_mock_attack_success:
         risk_class = "CRITICAL"
 
-    # Escalation rule for weight 5
-    if has_critical_failure and risk_class in ["SAFE", "LOW RISK"]:
+    # Escalation rule 2: any S=5 failure → at least HIGH RISK
+    if has_critical_failure and risk_class in ("SAFE", "LOW RISK"):
         risk_class = "HIGH RISK"
 
     # Generate MITRE ATT&CK hits for flagged parameters
     mitre_hits = get_mitre_hits(flagged)
+
+    # Top 5 per-parameter contributors (for API transparency)
+    top_contributors = explain_score(params, asset_criticality)[:5]
 
     return (
         round(normalized_score, 2),
@@ -455,4 +531,5 @@ def score(
         flagged,
         mitre_hits,
         asset_criticality,
+        top_contributors,
     )

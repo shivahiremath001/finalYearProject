@@ -23,6 +23,7 @@ class MachineRegistry(Base):
     last_risk_class = Column(String, default="UNKNOWN")
     asset_criticality = Column(Float, default=1.0)
     anomaly_streak = Column(Integer, default=0)  # Consecutive anomaly count
+    status = Column(String, default="ONLINE")  # ONLINE | OFFLINE
 
 
 class ConfigurationScan(Base):

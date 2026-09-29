@@ -83,6 +83,7 @@ class ScanResponse(BaseModel):
     flagged: dict[str, list[str]]
     mitre_hits: list[dict] = []
     anomaly: Optional[dict] = None
+    top_contributors: list[dict] = []  # Top 5 per-parameter risk contributors
 
 
 class MitreHit(BaseModel):
@@ -118,6 +119,7 @@ class MachineOut(BaseModel):
     last_seen: Optional[datetime]
     last_risk_score: float
     last_risk_class: str
+    status: str = "ONLINE"
 
     model_config = {"from_attributes": True}
 

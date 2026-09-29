@@ -1,0 +1,19 @@
+# Synthetic Scenario Validation
+
+| Scenario                      | Asset Type        |   Risk Score | Risk Class   |
+|:------------------------------|:------------------|-------------:|:-------------|
+| hardened_server               | Workstation       |         0    | SAFE         |
+| hardened_server               | Server            |         0    | SAFE         |
+| hardened_server               | Domain Controller |         0    | SAFE         |
+| typical_unmanaged_workstation | Workstation       |        19.8  | HIGH RISK    |
+| typical_unmanaged_workstation | Server            |        25.74 | HIGH RISK    |
+| typical_unmanaged_workstation | Domain Controller |        31.68 | HIGH RISK    |
+| lockbit_style_exposed_rdp     | Workstation       |        32.75 | HIGH RISK    |
+| lockbit_style_exposed_rdp     | Server            |        42.58 | HIGH RISK    |
+| lockbit_style_exposed_rdp     | Domain Controller |        52.4  | HIGH RISK    |
+| phishing_macro_chain          | Workstation       |        20.8  | HIGH RISK    |
+| phishing_macro_chain          | Server            |        27.04 | HIGH RISK    |
+| phishing_macro_chain          | Domain Controller |        33.28 | HIGH RISK    |
+| partially_hardened_dc         | Workstation       |        15.57 | HIGH RISK    |
+| partially_hardened_dc         | Server            |        20.24 | HIGH RISK    |
+| partially_hardened_dc         | Domain Controller |        24.91 | HIGH RISK    |

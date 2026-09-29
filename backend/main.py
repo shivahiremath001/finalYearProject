@@ -102,6 +102,24 @@ from report_generator import generate_daily_report
 # ── Create all tables on startup ─────────────────────────────────────────────
 models.Base.metadata.create_all(bind=engine)
 
+async def monitor_heartbeats():
+    """Background task: checks every 30s for offline machines (>150s)."""
+    while True:
+        try:
+            await asyncio.sleep(30)
+            with SessionLocal() as db:
+                offline_hosts = crud.mark_offline_machines(db, cutoff_seconds=150)
+                for host in offline_hosts:
+                    asyncio.create_task(manager.broadcast({
+                        "type": "host_offline",
+                        "hostname": host,
+                        "message": f"Host {host} went offline."
+                    }))
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"Error in heartbeat monitor: {e}")
+
 # ── Lifespan (startup / shutdown logic) ──────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -113,8 +131,17 @@ async def lifespan(app: FastAPI):
         crud.seed_dummy_machine(db)
     finally:
         db.close()
+    
+    # Start background tasks
+    task = asyncio.create_task(monitor_heartbeats())
+    
     yield
     # --- Shutdown (add cleanup here if needed in future) ---
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(
@@ -215,7 +242,7 @@ async def ingest(
             setattr(req.data, key, False)  # Safelist this parameter
 
     # Score the machine
-    risk_score, risk_class, flagged, mitre_hits, asset_criticality = score(
+    risk_score, risk_class, flagged, mitre_hits, asset_criticality, top_contributors = score(
         req.data, req.asset_type
     )
 
@@ -245,6 +272,9 @@ async def ingest(
     anomaly_result = detect_anomaly(db, req.host_id, risk_score)
 
     # Upsert machine registry + insert scan row (with anomaly data)
+    machine = db.query(models.MachineRegistry).filter_by(hostname=req.host_id).first()
+    was_offline = (machine is not None and machine.status == "OFFLINE")
+
     machine = crud.upsert_machine(
         db, req, ip, risk_score, risk_class, asset_criticality
     )
@@ -312,6 +342,13 @@ async def ingest(
         }
     )
 
+    if was_offline:
+        await manager.broadcast({
+            "type": "host_online",
+            "hostname": req.host_id,
+            "message": f"Host {req.host_id} came back online."
+        })
+
     return ScanResponse(
         message=f"Scan recorded. Risk class: {risk_class}",
         hostname=req.host_id,
@@ -320,6 +357,7 @@ async def ingest(
         flagged=flagged,
         mitre_hits=mitre_hits,
         anomaly=anomaly_data,
+        top_contributors=top_contributors,
     )
 
 
