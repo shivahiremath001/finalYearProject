@@ -69,7 +69,7 @@ except ImportError:
                     os.environ.setdefault(_k.strip(), _v.strip())
 
 import models
-from database import engine, SessionLocal
+from database import engine, SessionLocal, sync_db_schema
 from schemas import (
     IngestRequest,
     ScanResponse,
@@ -99,8 +99,10 @@ from remediation_registry import get_all_commands, get_command
 from anomaly import detect_anomaly
 from report_generator import generate_daily_report
 
-# ── Create all tables on startup ─────────────────────────────────────────────
+# ── Create all tables & sync missing columns on startup ─────────────────────
 models.Base.metadata.create_all(bind=engine)
+sync_db_schema(engine, models.Base)
+
 
 async def monitor_heartbeats():
     """Background task: checks every 30s for offline machines (>150s)."""
