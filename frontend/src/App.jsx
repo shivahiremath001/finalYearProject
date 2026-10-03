@@ -21,7 +21,8 @@ import {
   PARAM_LABELS,
   PARAM_SEVERITY,
   PARAM_DESCRIPTIONS,
-  MITRE_MAPPING
+  MITRE_MAPPING,
+  MANUAL_FIX_GUIDES
 } from './constants'
 
 
@@ -290,10 +291,11 @@ function LoginPage({ onLogin }) {
 }
 
 // ── Machine Detail Panel ──────────────────────────────────────────────────────
-function MachineDetail({ machine, token, onClose, liveData, theme }) {
+function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy }) {
   const [detail, setDetail] = useState(null)       // from /machines/{h}/detail
   const [cmdHistory, setCmdHistory] = useState([])
   const [availCmds, setAvailCmds] = useState([])
+  const [policyExceptions, setPolicyExceptions] = useState([])
   const [cmdState, setCmdState] = useState({})      // param_key → 'idle'|'sending'|'queued'
   const [confirm, setConfirm] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -319,11 +321,14 @@ function MachineDetail({ machine, token, onClose, liveData, theme }) {
         .then(r => r.ok ? r.json() : null),
       apiFetch('/remediation/available', {}, token)
         .then(r => r.ok ? r.json() : []),
+      apiFetch('/policies', {}, token)
+        .then(r => r.ok ? r.json() : []),
       apiFetch(`/commands/${encodeURIComponent(hostname)}/history?limit=20`, {}, token)
         .then(r => r.ok ? r.json() : []),
-    ]).then(([det, cmds, hist]) => {
+    ]).then(([det, cmds, policies, hist]) => {
       setDetail(det)
       setAvailCmds(cmds)
+      setPolicyExceptions(policies.filter(p => p.hostname === hostname))
       setCmdHistory(hist)
       // Pre-populate cmdState with existing queued/executing commands
       if (hist && cmds) {
@@ -342,7 +347,19 @@ function MachineDetail({ machine, token, onClose, liveData, theme }) {
   const handleFixClick = (paramKey) => {
     const cmd = availCmds.find(c => c.param_key === paramKey)
     if (!cmd) return
-    setConfirm({ paramKey, commandKey: cmd.key, label: cmd.label })
+    const warnings = {
+      smb_v1_enabled: 'Check for legacy devices or applications that still depend on SMBv1 before applying this change.',
+      rdp_enabled: 'This disables Remote Desktop and can cut off remote administration. Confirm an alternate access path before continuing.',
+      uac_disabled: 'A reboot may be needed before UAC is fully effective.',
+      tamper_protection_off: 'This is a best-effort local change. Centrally managed Defender policy may override it; verify the effective state after the scan.',
+      firewall_disabled: 'Enabling the firewall can block inbound services. Confirm required application and management rules are in place.',
+      lsass_protection_off: 'A reboot is required for LSASS protection to take effect.',
+      vulnerable_driver_blocklist_enabled: 'A reboot may be required. Confirm this endpoint can restart in the planned window.',
+      hvci_enabled: 'A reboot is required, and older hardware or drivers may be incompatible. Validate compatibility first.',
+      asr_rules_configured: 'This command enables a specific ASR rule. Check application compatibility and your organization’s Defender policy first.',
+      powershell_unrestricted: 'This changes a defense-in-depth setting; PowerShell execution policy is not a security boundary.'
+    }
+    setConfirm({ paramKey, commandKey: cmd.key, label: cmd.label, warning: warnings[paramKey] })
   }
 
   const handleConfirm = async () => {
@@ -380,7 +397,7 @@ function MachineDetail({ machine, token, onClose, liveData, theme }) {
     <div className="detail-overlay" onClick={onClose}>
       {confirm && (
         <ConfirmDialog
-          message={`Apply fix "${confirm.label}" on ${hostname}?\n\nThe agent will execute the PowerShell script on its next poll cycle (~30s).`}
+          message={`Apply fix "${confirm.label}" on ${hostname}?\n\nThe agent will execute the approved fix at its next check-in. A fresh scan will follow to verify the resulting state.${confirm.warning ? `\n\nBefore you continue: ${confirm.warning}` : ''}`}
           onConfirm={handleConfirm}
           onCancel={() => setConfirm(null)}
         />
@@ -436,6 +453,22 @@ function MachineDetail({ machine, token, onClose, liveData, theme }) {
             </div>
             <p className="score-num">{Number(score).toFixed(1)} / 100</p>
             <p className="muted">{totalFlagged} misconfiguration{totalFlagged !== 1 ? 's' : ''} found</p>
+            {policyExceptions.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6, marginTop: 4 }}>
+                <span className="muted" style={{ fontSize: 12 }}>Policy exceptions ({policyExceptions.length})</span>
+                {policyExceptions.map(policy => (
+                  <button
+                    key={policy.id}
+                    type="button"
+                    onClick={() => onOpenPolicy(policy)}
+                    title={policy.reason || 'Open this policy exception'}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--overlay)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}
+                  >
+                    <FileKey size={13} /> {PARAM_LABELS[policy.param_key] || policy.param_key} · Policy
+                  </button>
+                ))}
+              </div>
+            )}
             {detail?.scanned_at && <p className="muted">Scanned {timeSince(detail.scanned_at)}</p>}
             {detail?.anomaly_streak > 0 && (
               <p className="anomaly-streak-label">🔥 Posture drift streak: {detail.anomaly_streak}</p>
@@ -479,6 +512,7 @@ function MachineDetail({ machine, token, onClose, liveData, theme }) {
                       const st = cmdState[param]
                       const mitre = MITRE_MAPPING[param]
                       const isExpanded = expandedIssues[param]
+                      const policy = policyExceptions.find(p => p.param_key === param)
                       return (
                         <div key={param} className="issue-card" onClick={() => toggleExpand(param)}>
                           <div className="issue-left">
@@ -486,18 +520,36 @@ function MachineDetail({ machine, token, onClose, liveData, theme }) {
                             <div className="issue-text">
                               <div className="issue-name-row">
                                 <span className="issue-name">{PARAM_LABELS[param] || param.replace(/_/g, ' ')}</span>
+                                {policy && (
+                                  <button
+                                    type="button"
+                                    className="mitre-badge"
+                                    title={`Active policy exception${policy.reason ? `: ${policy.reason}` : ''}. Open this exception in Policies.`}
+                                    onClick={e => { e.stopPropagation(); onOpenPolicy(policy) }}
+                                    style={{ border: '1px solid var(--border2)', cursor: 'pointer', background: 'var(--overlay)' }}
+                                  >Policy exception</button>
+                                )}
                                 {mitre && <span className="mitre-badge" title={`${mitre.name} — ${mitre.tactic}`}>{mitre.id}</span>}
                               </div>
                               {isExpanded && (
                                 <div className="issue-expanded">
+                                  {policy && <p className="issue-desc" style={{ color: 'var(--low)', marginBottom: 8 }}>An active policy exception is registered for this risky parameter. It remains visible as a finding; the exception documents an approved deviation.</p>}
                                   <span className="issue-desc">{PARAM_DESCRIPTIONS[param] || ''}</span>
-                                  {!fixCmd && (
+                                  {(!fixCmd || MANUAL_FIX_GUIDES[param]) && (
                                     <div className="fix-area">
-                                      {param.includes('mock_attack') ? (
-                                        <p className="muted" style={{color: 'var(--critical)'}}>This is an active validation failure. You must investigate your EDR/AV policies to ensure they properly block ransomware behaviors.</p>
-                                      ) : (
-                                        <p className="muted">This issue must be remediated locally.</p>
-                                      )}
+                                      <div style={{ marginTop: 12, padding: 14, borderRadius: 10, background: 'var(--overlay)', border: '1px solid var(--border2)' }}>
+                                        <strong style={{ display: 'block', color: 'var(--text)', marginBottom: 8 }}>How to fix this risk manually</strong>
+                                        {MANUAL_FIX_GUIDES[param] ? (
+                                          <>
+                                            <ol style={{ margin: '0 0 12px', paddingLeft: 20, color: 'var(--subtle)', fontSize: 13, lineHeight: 1.65 }}>
+                                              {MANUAL_FIX_GUIDES[param].steps.map((step, i) => <li key={i} style={{ marginBottom: 6 }}>{step}</li>)}
+                                            </ol>
+                                            <p style={{ margin: 0, color: 'var(--subtle)', fontSize: 13, lineHeight: 1.6 }}><strong style={{ color: 'var(--text)' }}>Verify:</strong> {MANUAL_FIX_GUIDES[param].verify}</p>
+                                          </>
+                                        ) : (
+                                          <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>This check has no approved remote command. Remediate it locally using your organization’s security policy, then run a new scan to confirm the result.</p>
+                                        )}
+                                      </div>
                                     </div>
                                   )}
                                   {mitre && (
@@ -527,7 +579,28 @@ function MachineDetail({ machine, token, onClose, liveData, theme }) {
                                 </button>
                               )
                             ) : (
-                              <span className="no-fix muted">Manual fix</span>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                aria-expanded={Boolean(isExpanded)}
+                                onClick={() => toggleExpand(param)}
+                                title={`Show manual fix instructions for ${PARAM_LABELS[param] || param}`}
+                                style={{ color: 'var(--primary)', whiteSpace: 'nowrap' }}
+                              >
+                                {isExpanded ? 'Hide instructions' : 'How to fix'}
+                              </button>
+                            )}
+                            {fixCmd && MANUAL_FIX_GUIDES[param] && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                aria-expanded={Boolean(isExpanded)}
+                                onClick={() => toggleExpand(param)}
+                                title={`Show manual guidance for ${PARAM_LABELS[param] || param}`}
+                                style={{ color: 'var(--subtle)', whiteSpace: 'nowrap', marginTop: 6 }}
+                              >
+                                Manual steps
+                              </button>
                             )}
                           </div>
                         </div>
@@ -592,6 +665,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
   const [filterRisk, setFilterRisk] = useState(null)
   const [toasts, setToasts] = useState([])
   const [activeTab, setActiveTab] = useState('overview')
+  const [policyTarget, setPolicyTarget] = useState(null)
   const wsRef = useRef(null)
   const toastIdRef = useRef(0)
 
@@ -780,7 +854,14 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
       </aside>
 
       <main className="dashboard-main">
-        {activeTab === 'policies' && <PoliciesView token={token} />}
+        {activeTab === 'policies' && (
+          <PoliciesView
+            token={token}
+            target={policyTarget}
+            onViewSystem={hostname => { setActiveTab('overview'); setSelected(hostname) }}
+            onClearTarget={() => setPolicyTarget(null)}
+          />
+        )}
         {activeTab === 'remediation' && <RemediationView token={token} />}
         {activeTab === 'analytics' && <AnalyticsView token={token} />}
         {activeTab === 'map' && <NetworkMapView token={token} />}
@@ -845,7 +926,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
             {/* Fleet Table */}
             <div className="fleet-section">
               <div className="table-wrap">
-                <table className="machine-table">
+                <table className="machine-table fleet-machine-table">
                   <thead>
                     <tr>
                       <th></th>
@@ -934,6 +1015,11 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
           onClose={() => setSelected(null)}
           liveData={liveData}
           theme={theme}
+          onOpenPolicy={policy => {
+            setPolicyTarget({ hostname: policy.hostname, param_key: policy.param_key })
+            setSelected(null)
+            setActiveTab('policies')
+          }}
         />
       )}
     </div>

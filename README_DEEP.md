@@ -78,7 +78,7 @@ R3P fills this critical defense gap by introducing continuous posture profiling:
 2. **Active Behavioral Validation:** Executes non-destructive mock attack simulations (e.g., VSS shadow copy reconnaissance and rapid mass-file renaming) to verify whether local EDR or security controls actively detect and block ransomware-like activity.
 3. **Context-Aware Mathematical Scoring Engine (`scoring.py`):** Translates raw telemetry into a normalized **0–100 Risk Score** using multi-variable weighting (Severity Weight $\times$ Exploitation Likelihood $\times$ Asset Criticality Multiplier) with a hard-coded critical escalation failsafe.
 4. **Statistical Anomaly Detection (`anomaly.py`):** Implements a **Rolling Z-Score algorithm** across historical scans to detect Posture Drift—flagging sudden security degradations or unauthorized modifications in real time.
-5. **Zero-Trust Remediation Engine (`remediation_registry.py`):** Enables admins to trigger one-click remote remediation from a central dashboard. Commands are passed exclusively as pre-validated string identifiers (`command_key`) executed against a strict local allowlist—preventing arbitrary code execution across network boundaries.
+5. **Allowlisted Remediation Engine (`remediation_registry.py`):** Admin-confirmed remote actions send only pre-approved string identifiers (`command_key`), which the agent checks against its local allowlist. After execution, the agent runs a fresh scan to verify observed configuration.
 6. **Real-Time Admin Dashboard:** A React 18 single-page application communicating with a FastAPI backend through HTTP REST and WebSocket feeds.
 
 ---
@@ -114,7 +114,7 @@ Ransomware accounts for over **$57 billion in global damages annually** (Cyberse
 - ✅ **Failsafe Severity Escalation:** Automatic override to `HIGH RISK` or `CRITICAL` upon detecting any single Weight 5 parameter failure.
 - ✅ **Statistical Anomaly Detection:** Rolling Z-score computation over a sliding window ($N=10$) flagging posture drift ($|z| > 2.0$).
 - ✅ **MITRE ATT&CK Mapping:** Explicit cross-referencing of every check against official MITRE ATT&CK Enterprise v15 technique IDs.
-- ✅ **Zero-Trust Remediation Protocol:** Secure remote execution of allowlisted PowerShell remediation scripts via parameter-only WebSocket/REST triggers.
+- ✅ **Controlled Remediation Protocol:** Admin-confirmed remote execution of allowlisted PowerShell actions, followed by an immediate verification scan.
 - ✅ **Real-Time Web Dashboard:** Responsive React 18 administrative interface with dynamic risk gauges, WebSocket streaming updates, and command execution audit logs.
 - ✅ **JWT & API Key Security:** Dual-layer security enforcing API-key-authenticated telemetry ingestion and OAuth2 JWT-bearer-authenticated admin sessions.
 
@@ -223,6 +223,9 @@ sequenceDiagram
     Agent->>Agent: Execute PowerShell locally: Set-SmbServerConfiguration...
     Agent->>API: POST /commands/{hostname}/42/ack {status: "SUCCESS", output: "..."}
     API->>DB: Update Command Status to EXECUTED
+    Agent->>Agent: Wake scan loop immediately after command execution
+    Agent->>API: POST /ingest with fresh endpoint telemetry
+    API->>Admin: Update score and findings from observed state
     API->>WSHub: broadcast_event("command_ack", payload)
     WSHub-->>Admin: Update UI Command Audit Log Status to GREEN
 ```
@@ -273,31 +276,29 @@ Unlike passive audit tools that rely solely on reading static registry keys (whi
 
 ### Local Remediation Allowlist Execution
 
-When the backend queues a remediation order for an endpoint, the agent retrieves the job during its command polling phase. The agent **never receives raw code across the network**.
+When the backend queues a remediation order, the agent receives only an allowlisted command key; PowerShell is stored locally in the agent. The admin confirms the action in the system detail view before it is queued. After executing queued commands, the agent wakes the scan loop immediately and submits fresh telemetry. The new scan updates the score and findings, providing state verification in addition to the command execution ACK.
 
-```python
-AGENT_REMEDIATION = {
-    "disable_smb1": "Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force",
-    "block_rdp": "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name 'fDenyTSConnections' -Value 1",
-    "enable_uac": "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'EnableLUA' -Value 1",
-    "enable_defender": "Set-MpPreference -DisableRealtimeMonitoring $false",
-    "enable_firewall": "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True",
-    "enable_vss": "Enable-ComputerRestore -Drive 'C:\\'",
-    "enable_tamper_protection": "Set-MpPreference -DisableTamperProtection $false",
-    "enable_lsass_ppl": "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa' -Name 'RunAsPPL' -Value 1",
-    "disable_guest": "Disable-LocalUser -Name 'Guest'",
-    "restrict_powershell": "Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force"
-}
+The current allowlist covers 17 parameters: `smb_v1_enabled`, `rdp_enabled`, `autorun_enabled`, `powershell_unrestricted`, `uac_disabled`, `defender_disabled`, `firewall_disabled`, `tamper_protection_off`, `event_logging_disabled`, `guest_account_active`, `lsass_protection_off`, `wdigest_enabled`, `nla_disabled`, `always_install_elevated`, `vulnerable_driver_blocklist_enabled`, `hvci_enabled`, and `asr_rules_configured`.
 
-def execute_command(command_key: str) -> tuple[bool, str]:
-    # Strict Local Allowlist Validation
-    if command_key not in AGENT_REMEDIATION:
-        return False, f"SECURITY ERROR: Command key '{command_key}' rejected by local agent allowlist."
-    
-    script = AGENT_REMEDIATION[command_key]
-    result = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], capture_output=True, text=True)
-    return (result.returncode == 0), result.stdout or result.stderr
-```
+The following parameters have manual guidance in the admin detail view. Some have an attempted remote command as well, with warnings and post-action verification:
+
+- `rdp_enabled` and `tamper_protection_off` have remote attempts, but require special care. Disabling RDP may cut off remote administration; Tamper Protection changes may be overridden by centrally managed policy. The UI calls out these risks and also offers manual guidance.
+- `open_network_shares`, `admin_shares_enabled`, `macro_execution_enabled`, and `applocker_absent`: require permissions or policy choices that depend on business applications and management policy.
+- `vss_deleted` and `backup_absent`: recovery must be established and tested; an agent command cannot restore already deleted snapshots or choose an organization’s backup architecture.
+- `bitlocker_off`: first configure and verify recovery-key escrow, then enable encryption under the organization’s policy.
+- `laps_absent`: requires directory target, policy, and delegated permissions to be configured.
+- `mock_attack_vss_enum_succeeded` and `mock_attack_mass_rename_succeeded`: these are EDR/AV behavior validation results, not endpoint settings. Fix the protection policy in the relevant security product and rerun validation.
+
+The admin UI shows per-parameter manual steps and verification instructions for these cases. A PowerShell execution-policy change is available only as a defense-in-depth setting; it is not a security boundary and must not be presented as application control.
+
+### Remediation Safety and Tradeoffs
+
+- All remote fixes require an explicit admin confirmation. The dialog calls out relevant compatibility, reboot, or impact considerations where known.
+- R3P reports the command ACK separately from the observed configuration. A successful command exit does not prove that policy took effect; the immediate follow-up scan is the verification step.
+- SMBv1, HVCI, UAC, LSASS protection, and ASR changes can affect compatibility, require reboot, or change application behavior. Validate on a small set of endpoints and use a maintenance window where appropriate.
+- RDP disablement has a confirmation warning because it can lock administrators out. Tamper Protection remote remediation is best effort; use Windows Security or centrally managed policy if it does not take effect. Both risks expose manual steps in the detail view.
+- The command allowlists exist in both `backend/remediation_registry.py` and `collector.py`; keep them synchronized when adding or removing a remote fix.
+- When distributing the agent as an executable, rebuild it from the updated `collector.py` (using the project build script) and redeploy it so endpoints receive the current allowlist and immediate-rescan behavior.
 
 ### Persistence, Registry Hooks, & Multi-Threading
 
@@ -355,7 +356,7 @@ Every telemetry parameter monitored by R3P maps directly to a specific Windows c
 | 4 | `open_network_shares` | Boolean | WMI `Win32_Share` access rights check | Unrestricted SMB shares accessible by "Everyone". |
 | 5 | `nla_disabled` | Boolean | Registry `UserAuthentication` == 0 | Missing Network Level Auth allowing RDP pre-auth attacks. |
 | 6 | `macro_execution_enabled` | Boolean | Registry `VBAWarnings` != 4 | Microsoft Office macro auto-execution for phishing payloads. |
-| 7 | `powershell_unrestricted` | Boolean | `Get-ExecutionPolicy` | Unrestricted PowerShell execution policy allowing malicious scripts. |
+| 7 | `powershell_unrestricted` | Boolean | `Get-ExecutionPolicy` | Unrestricted execution policy; the policy setting is defense in depth, not a security boundary. |
 | 8 | `uac_disabled` | Boolean | Registry `EnableLUA` == 0 | Disabled User Account Control allowing silent admin escalation. |
 | 9 | `applocker_absent` | Boolean | AppLocker Policy WMI Query | Lack of application whitelisting allowing untrusted binaries. |
 | 10 | `always_install_elevated` | Boolean | Registry `AlwaysInstallElevated` == 1 | Standard users installing MSI packages with SYSTEM rights. |

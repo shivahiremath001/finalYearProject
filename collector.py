@@ -207,7 +207,7 @@ AGENT_REMEDIATION = {
     ),
     "enable_tamper_protection": (
         "Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue; "
-        "Write-Output 'Tamper Protection set.'"
+        "Write-Output 'Tamper Protection change attempted; verify effective state.'"
     ),
     "enable_event_log": (
         "Set-Service -Name 'eventlog' -StartupType Automatic; "
@@ -747,7 +747,7 @@ AGENT_REMEDIATION = {
     "enable_uac": "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'EnableLUA' -Value 1; Write-Output 'UAC enabled.'",
     "enable_defender": "Set-MpPreference -DisableRealtimeMonitoring $false; Start-Service -Name WinDefend -ErrorAction SilentlyContinue; Write-Output 'Defender enabled.'",
     "enable_firewall": "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True; Write-Output 'Firewall enabled.'",
-    "enable_tamper_protection": "Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue; Write-Output 'Tamper Protection set.'",
+    "enable_tamper_protection": "Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue; Write-Output 'Tamper Protection change attempted; verify effective state.'",
     "enable_event_log": "Set-Service -Name 'eventlog' -StartupType Automatic; Start-Service -Name 'eventlog'; Write-Output 'Event log started.'",
     "disable_guest": "Disable-LocalUser -Name 'Guest' -ErrorAction SilentlyContinue; Write-Output 'Guest disabled.'",
     "enable_lsass_protection": "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa' -Name 'RunAsPPL' -Value 1 -Type DWord; Write-Output 'LSASS protection enabled.'",
@@ -1293,6 +1293,11 @@ class MonitorApp(tk.Tk):
             # Clear notice after 30 seconds
             self.after(30000, lambda: self._cmd_label_text.set(""))
 
+        if commands:
+            # Re-scan immediately after remote changes so the server response
+            # verifies the resulting state instead of waiting a full interval.
+            self._wake_event.set()
+
     def _ack_command(self, cmd_id: int, status: str, output: str):
         try:
             requests.post(
@@ -1357,6 +1362,28 @@ class MonitorApp(tk.Tk):
             bg=COLORS["card"],
             fg=COLORS["subtle"],
         ).pack(anchor="w", pady=(0, 10))
+
+        policy_exceptions = result.get("policy_exceptions", [])
+        if policy_exceptions:
+            tk.Label(
+                self.result_inner,
+                text=f"Policy exceptions ({len(policy_exceptions)}) — excluded from this score:",
+                font=("Segoe UI", 9, "bold"),
+                bg=COLORS["card"],
+                fg=COLORS["info"],
+            ).pack(anchor="w", pady=(0, 3))
+            for exception in policy_exceptions:
+                param = exception.get("param_key", "unknown").replace("_", " ").title()
+                reason = exception.get("reason") or "No business justification provided"
+                tk.Label(
+                    self.result_inner,
+                    text=f"• {param}: {reason}",
+                    font=("Segoe UI", 8),
+                    bg=COLORS["card"],
+                    fg=COLORS["subtle"],
+                    wraplength=360,
+                    justify="left",
+                ).pack(anchor="w", padx=(8, 0), pady=(0, 3))
 
         tk.Frame(self.result_inner, bg=COLORS["border"], height=1).pack(
             fill="x", pady=(0, 8)

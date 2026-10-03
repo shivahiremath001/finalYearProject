@@ -239,13 +239,10 @@ async def ingest(
     # Apply Policy Exceptions
     exceptions = crud.get_policy_exceptions(db, req.host_id)
     exc_keys = [e.param_key for e in exceptions]
-    for key in exc_keys:
-        if hasattr(req.data, key):
-            setattr(req.data, key, False)  # Safelist this parameter
 
     # Score the machine
     risk_score, risk_class, flagged, mitre_hits, asset_criticality, top_contributors = score(
-        req.data, req.asset_type
+        req.data, req.asset_type, excluded_params=set(exc_keys)
     )
 
     # Compute posture drift
@@ -360,6 +357,7 @@ async def ingest(
         mitre_hits=mitre_hits,
         anomaly=anomaly_data,
         top_contributors=top_contributors,
+        policy_exceptions=[{"param_key": e.param_key, "reason": e.reason} for e in exceptions],
     )
 
 

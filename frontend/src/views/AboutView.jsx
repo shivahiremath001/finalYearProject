@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Target, BookOpen, List, ChevronDown, CheckCircle2, Shield, Settings, Activity } from 'lucide-react';
-import { PARAM_LABELS, PARAM_DESCRIPTIONS, PARAM_EXTENDED_INFO, MITRE_MAPPING } from '../constants';
+import { Target, BookOpen, List, ChevronDown, CheckCircle2, Shield, Settings, Activity, Calculator } from 'lucide-react';
+import { PARAM_LABELS, PARAM_DESCRIPTIONS, PARAM_EXTENDED_INFO, MITRE_MAPPING, SCORING_SEVERITY, SCORING_LIKELIHOOD } from '../constants';
 
 export default function AboutView() {
   const [activeTab, setActiveTab] = useState('purpose');
   const [openParam, setOpenParam] = useState(null);
+  const [openScoreParam, setOpenScoreParam] = useState(null);
 
   const toggleParam = (key) => {
     if (openParam === key) setOpenParam(null);
@@ -30,7 +31,8 @@ export default function AboutView() {
         {[
           { id: 'purpose', label: 'Purpose', icon: <Target size={16} /> },
           { id: 'guide', label: 'Guide', icon: <BookOpen size={16} /> },
-          { id: 'params', label: 'Parameters', icon: <List size={16} /> }
+          { id: 'params', label: 'Parameters', icon: <List size={16} /> },
+          { id: 'scoring', label: 'Scoring Logic', icon: <Calculator size={16} /> }
         ].map(tab => (
           <button
             key={tab.id}
@@ -211,6 +213,130 @@ export default function AboutView() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'scoring' && (
+          <div className="slide-in">
+            <h2 style={{ fontSize: '24px', fontWeight: '600', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Calculator size={24} color="var(--primary)" /> How the risk score works
+            </h2>
+            <p className="muted" style={{ marginBottom: '24px', lineHeight: '1.6' }}>
+              R3P scores each endpoint from 0 to 100. The score combines the security checks that failed with how severe and likely each risk is, then adjusts for the importance of the asset.
+            </p>
+
+            <div style={{ background: 'var(--overlay)', border: '1px solid var(--border2)', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
+              <h3 style={{ color: 'var(--text)', fontSize: '16px', marginBottom: '12px' }}>The formula</h3>
+              <div style={{ color: 'var(--text)', fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', fontSize: '14px', lineHeight: '1.8', overflowWrap: 'anywhere' }}>
+                Check contribution = Severity × Likelihood × Asset criticality<br />
+                Score = min(100, total contributions ÷ 80.3 × 100)
+              </div>
+              <p style={{ color: 'var(--subtle)', fontSize: '13px', lineHeight: '1.6', marginTop: '12px', marginBottom: 0 }}>
+                The denominator, 80.3, is the maximum combined Severity × Likelihood for all 27 checks at workstation criticality. This keeps the baseline score on a comparable 0–100 scale.
+              </p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+              {[
+                { title: 'Severity (1–5)', text: 'How much damage the weakness could cause. Higher severity adds more risk.' },
+                { title: 'Likelihood (0.1–1.0)', text: 'How commonly the risk is associated with real-world ransomware activity. Higher likelihood adds more risk.' },
+                { title: 'Asset criticality', text: 'Workstation = 1.0, Server = 1.3, Domain Controller = 1.6. More critical assets receive higher scores for the same findings.' }
+              ].map(item => (
+                <div key={item.title} style={{ background: 'var(--overlay)', border: '1px solid var(--border2)', borderRadius: '12px', padding: '16px' }}>
+                  <h3 style={{ color: 'var(--text)', fontSize: '15px', marginBottom: '8px' }}>{item.title}</h3>
+                  <p style={{ color: 'var(--subtle)', fontSize: '13px', lineHeight: '1.6', margin: 0 }}>{item.text}</p>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <h3 style={{ color: 'var(--text)', fontSize: '16px', marginBottom: '12px' }}>Risk bands and escalation rules</h3>
+              <div style={{ display: 'grid', gap: '8px' }}>
+                {[
+                  ['0–24.99', 'SAFE'], ['25–49.99', 'LOW RISK'], ['50–74.99', 'HIGH RISK'], ['75–100', 'CRITICAL']
+                ].map(([range, label]) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '11px 14px', borderRadius: '9px', background: 'var(--overlay)', color: 'var(--subtle)', fontSize: '14px' }}>
+                    <span>{range} score</span><strong style={{ color: 'var(--text)' }}>{label}</strong>
+                  </div>
+                ))}
+              </div>
+              <p style={{ color: 'var(--subtle)', fontSize: '13px', lineHeight: '1.6', marginTop: '12px' }}>
+                A successful simulated attack raises the classification to CRITICAL regardless of the numeric score. Any failed check with severity 5 raises the classification to at least HIGH RISK. These rules change the label, while the displayed numeric score remains the calculated score.
+              </p>
+            </div>
+
+            <div style={{ background: 'var(--overlay)', border: '1px solid var(--border2)', borderRadius: '12px', padding: '16px' }}>
+              <h3 style={{ color: 'var(--text)', fontSize: '15px', marginBottom: '8px' }}>Example</h3>
+              <p style={{ color: 'var(--subtle)', fontSize: '13px', lineHeight: '1.6', margin: 0 }}>
+                If a workstation has a failed check with severity 4 and likelihood 0.9, it adds 3.6 raw risk points (4 × 0.9 × 1.0). The contributions from all failed checks are summed and normalized. The dashboard also surfaces the largest individual contributors to help explain what is driving a result.
+              </p>
+            </div>
+
+            <div style={{ marginTop: '28px' }}>
+              <h3 style={{ color: 'var(--text)', fontSize: '18px', marginBottom: '8px' }}>Parameter-by-parameter scoring</h3>
+              <p style={{ color: 'var(--subtle)', fontSize: '13px', lineHeight: '1.6', marginBottom: '16px' }}>
+                Expand any check to see what it measures, when it counts as a failure, its exact backend weights, and the raw points it contributes when failed. “Raw contribution” is before the final normalization to 0–100.
+              </p>
+              {[
+                { phase: 'Entry Vector', keys: ['smb_v1_enabled', 'rdp_enabled', 'autorun_enabled', 'open_network_shares', 'nla_disabled'] },
+                { phase: 'Execution', keys: ['macro_execution_enabled', 'powershell_unrestricted', 'uac_disabled', 'applocker_absent', 'always_install_elevated'] },
+                { phase: 'Evasion & Persistence', keys: ['defender_disabled', 'firewall_disabled', 'tamper_protection_off', 'event_logging_disabled', 'vulnerable_driver_blocklist_enabled', 'hvci_enabled', 'asr_rules_configured'] },
+                { phase: 'Lateral Movement', keys: ['admin_shares_enabled', 'lsass_protection_off', 'guest_account_active', 'wdigest_enabled', 'laps_absent'] },
+                { phase: 'Recovery Prevention', keys: ['vss_deleted', 'backup_absent', 'bitlocker_off'] },
+                { phase: 'Active Validation (Mock Attacks)', keys: ['mock_attack_vss_enum_succeeded', 'mock_attack_mass_rename_succeeded'] }
+              ].map(({ phase, keys }) => (
+                <section key={phase} style={{ marginBottom: '18px' }}>
+                  <h4 style={{ color: 'var(--text)', fontSize: '14px', fontWeight: '600', marginBottom: '8px' }}>{phase}</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                    {keys.map(key => {
+                      const isOpen = openScoreParam === key;
+                      const severity = SCORING_SEVERITY[key];
+                      const likelihood = SCORING_LIKELIHOOD[key];
+                      const explanation = PARAM_EXTENDED_INFO[key] || PARAM_DESCRIPTIONS[key] || 'This security posture check contributes to the endpoint risk score when it fails.';
+                      const failureMeaning = key === 'rdp_enabled'
+                        ? 'RDP is reported as open (collector field: rdp_open).'
+                        : key === 'firewall_disabled'
+                          ? 'The collector reports the firewall as off (firewall_on is false).'
+                          : key === 'backup_absent'
+                            ? 'The collector reports that backup is not configured (backup_configured is false).'
+                            : key === 'vulnerable_driver_blocklist_enabled' || key === 'hvci_enabled' || key === 'asr_rules_configured'
+                              ? 'The corresponding protection is not enabled or configured; the backend inverts the collector’s enabled/configured state before scoring.'
+                              : key.startsWith('mock_attack_')
+                                ? 'The simulated behavior was not blocked. If the test did not run (result is null), this check is not counted as failed.'
+                                : 'The collector reports the risky state named by this check (for example, “disabled” or “enabled” in the label).';
+                      return (
+                        <div key={key} style={{ border: '1px solid var(--border2)', borderRadius: '10px', overflow: 'hidden', background: isOpen ? 'var(--overlay)' : 'transparent' }}>
+                          <button
+                            type="button"
+                            aria-expanded={isOpen}
+                            onClick={() => setOpenScoreParam(isOpen ? null : key)}
+                            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '13px 15px', border: 'none', background: 'transparent', color: 'var(--text)', textAlign: 'left', cursor: 'pointer' }}
+                          >
+                            <span style={{ fontSize: '14px', fontWeight: '500' }}>{PARAM_LABELS[key] || key}</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, color: 'var(--subtle)', fontSize: '12px' }}>
+                              S {severity} · L {likelihood}
+                              <ChevronDown size={17} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
+                            </span>
+                          </button>
+                          {isOpen && (
+                            <div style={{ padding: '0 15px 15px', color: 'var(--subtle)', fontSize: '13px', lineHeight: '1.65' }}>
+                              <p style={{ paddingTop: '12px', borderTop: '1px solid var(--border)', margin: '0 0 10px' }}>{explanation}</p>
+                              <p style={{ margin: '0 0 8px' }}><strong style={{ color: 'var(--text)' }}>When it is scored:</strong> {failureMeaning}</p>
+                              <p style={{ margin: 0 }}>
+                                <strong style={{ color: 'var(--text)' }}>Weights and points:</strong> Severity {severity} × Likelihood {likelihood} × asset multiplier. This adds <strong style={{ color: 'var(--text)' }}>{(severity * likelihood).toFixed(2)} raw points</strong> on a workstation, {(severity * likelihood * 1.3).toFixed(2)} on a server, or {(severity * likelihood * 1.6).toFixed(2)} on a domain controller. A passing check adds 0 points.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+              <p style={{ color: 'var(--subtle)', fontSize: '12px', lineHeight: '1.6', marginTop: '12px' }}>
+                The displayed Severity and Likelihood values are the scoring engine’s exact weights. They are model inputs, not a live probability that an attack will occur. For active validation, a mock test that was not run is treated as unfailed rather than as a pass or failure.
+              </p>
             </div>
           </div>
         )}

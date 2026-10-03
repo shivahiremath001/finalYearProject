@@ -449,7 +449,7 @@ def explain_score(
 
 
 def score(
-    data: CollectorData, asset_type: str = "Workstation"
+    data: CollectorData, asset_type: str = "Workstation", excluded_params: set[str] | None = None
 ) -> tuple[float, str, dict[str, list[str]], list[dict], float, list[dict]]:
     """
     Returns:
@@ -460,6 +460,12 @@ def score(
         criticality  the computed asset criticality multiplier
     """
     params = _translate(data)
+    # Apply policy exceptions after translating collector fields. Several scored
+    # keys are aliases or inversions of the telemetry fields (e.g. rdp_open and
+    # firewall_on), so filtering the raw payload by scored key is unreliable.
+    for param in excluded_params or ():
+        if param in params:
+            params[param] = False
     asset_criticality = get_asset_criticality(asset_type)
 
     total_risk = 0.0

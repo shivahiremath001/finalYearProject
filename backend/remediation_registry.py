@@ -37,8 +37,8 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
     "block_rdp": {
         "label": "Disable RDP (Block Port 3389)",
         "description": (
-            "An open RDP port allows brute-force and credential-stuffing attacks. "
-            "This disables the Remote Desktop service and blocks port 3389 via firewall."
+            "Disables Remote Desktop and its firewall rule. This can interrupt remote administration; "
+            "confirm an alternate management path before applying."
         ),
         "phase": "Entry Vector",
         "severity": "HIGH",
@@ -70,10 +70,10 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
     },
     # ── Execution ─────────────────────────────────────────────────────────────
     "restrict_powershell": {
-        "label": "Restrict PowerShell Execution Policy",
+        "label": "Set PowerShell Execution Policy (Defense in Depth)",
         "description": (
-            "An Unrestricted or Bypass policy allows any script to run without warning. "
-            "RemoteSigned requires downloaded scripts to be signed by a trusted publisher."
+            "Sets RemoteSigned as a basic safety measure. PowerShell execution policy is "
+            "not a security boundary and should not be treated as application control."
         ),
         "phase": "Execution",
         "severity": "HIGH",
@@ -133,18 +133,17 @@ REMEDIATION_COMMANDS: dict[str, dict] = {
         "reboot_required": False,
     },
     "enable_tamper_protection": {
-        "label": "Enable Defender Tamper Protection",
+        "label": "Enable Defender Tamper Protection (Best Effort)",
         "description": (
-            "Tamper Protection prevents malware from disabling Defender settings via registry or PowerShell. "
-            "Note: This can only be fully enabled via Windows Security Center or Intune on managed devices."
+            "Attempts to enable Tamper Protection locally. Centrally managed policy may override this; "
+            "verify the effective state in Windows Security or the Defender management console."
         ),
         "phase": "Evasion & Persistence",
         "severity": "MEDIUM",
         "param_key": "tamper_protection_off",
         "powershell": (
-            "# Best-effort via registry — full enforcement requires Windows Security Center UI "
             "Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue; "
-            "Write-Output 'Tamper Protection registry value set. Verify in Windows Security Center.'"
+            "Write-Output 'Tamper Protection change attempted; verify effective state.'"
         ),
         "reboot_required": False,
     },

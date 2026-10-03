@@ -84,6 +84,7 @@ class ScanResponse(BaseModel):
     mitre_hits: list[dict] = []
     anomaly: Optional[dict] = None
     top_contributors: list[dict] = []  # Top 5 per-parameter risk contributors
+    policy_exceptions: list[dict] = []  # Exceptions applied to this scan (param_key and reason)
 
 
 class MitreHit(BaseModel):

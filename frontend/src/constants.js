@@ -62,6 +62,29 @@ export const PARAM_SEVERITY = {
   mock_attack_vss_enum_succeeded: 'CRITICAL', mock_attack_mass_rename_succeeded: 'CRITICAL'
 }
 
+// Numeric scoring weights mirrored from backend/scoring.py for the About view.
+export const SCORING_SEVERITY = {
+  smb_v1_enabled: 5, rdp_enabled: 4, autorun_enabled: 2, open_network_shares: 3,
+  macro_execution_enabled: 4, powershell_unrestricted: 4, uac_disabled: 3, applocker_absent: 2,
+  defender_disabled: 4, firewall_disabled: 4, tamper_protection_off: 3, event_logging_disabled: 2,
+  admin_shares_enabled: 3, lsass_protection_off: 5, guest_account_active: 2,
+  vss_deleted: 5, backup_absent: 5, bitlocker_off: 5, nla_disabled: 4,
+  always_install_elevated: 5, wdigest_enabled: 5, laps_absent: 3,
+  vulnerable_driver_blocklist_enabled: 5, hvci_enabled: 4, asr_rules_configured: 4,
+  mock_attack_vss_enum_succeeded: 5, mock_attack_mass_rename_succeeded: 5,
+}
+
+export const SCORING_LIKELIHOOD = {
+  smb_v1_enabled: 0.4, rdp_enabled: 0.9, autorun_enabled: 0.3, open_network_shares: 0.7,
+  macro_execution_enabled: 0.8, powershell_unrestricted: 1.0, uac_disabled: 0.6, applocker_absent: 0.5,
+  defender_disabled: 0.9, firewall_disabled: 0.6, tamper_protection_off: 0.8, event_logging_disabled: 0.7,
+  admin_shares_enabled: 0.8, lsass_protection_off: 0.9, guest_account_active: 0.4,
+  vss_deleted: 1.0, backup_absent: 0.8, bitlocker_off: 0.5, nla_disabled: 0.8,
+  always_install_elevated: 0.6, wdigest_enabled: 0.7, laps_absent: 0.8,
+  vulnerable_driver_blocklist_enabled: 0.9, hvci_enabled: 0.8, asr_rules_configured: 0.8,
+  mock_attack_vss_enum_succeeded: 1.0, mock_attack_mass_rename_succeeded: 1.0,
+}
+
 export const PARAM_DESCRIPTIONS = {
   smb_v1_enabled: 'SMBv1 is the WannaCry/NotPetya exploit vector. Disable immediately.',
   lsass_protection_off: 'Mimikatz can dump plaintext passwords from LSASS memory.',
@@ -120,6 +143,57 @@ export const PARAM_EXTENDED_INFO = {
   asr_rules_configured: "Attack Surface Reduction (ASR) rules are a set of controls in Microsoft Defender that prevent software behaviors commonly abused by malware, such as blocking Office apps from creating child processes or blocking executable content from email clients. Without these rules, common attack vectors remain open, allowing phishing payloads to easily download and execute secondary ransomware stages.",
   mock_attack_vss_enum_succeeded: "Ransomware groups heavily rely on deleting Volume Shadow Copies to prevent victims from recovering files without paying the ransom. This Mock Attack actively simulates this reconnaissance behavior by issuing WMI queries to enumerate shadow copies. If the EDR/AV fails to detect and block this highly suspicious activity, it proves the system's behavioral defenses are inadequate against real ransomware.",
   mock_attack_mass_rename_succeeded: "The defining characteristic of a ransomware attack is the rapid encryption and renaming of thousands of files in a short time window. This Mock Attack safely simulates this by generating temporary files and rapidly renaming them to a '.locked' extension. A failure to block this simulation indicates that the endpoint's heuristic defenses cannot recognize or halt a live mass-encryption event."
+}
+
+export const MANUAL_FIX_GUIDES = {
+  rdp_enabled: {
+    steps: ['If Remote Desktop is required, do not disable it outright. Require Network Level Authentication, enforce MFA through an approved gateway, and restrict inbound access to a VPN or trusted management network.', 'If RDP is not required, coordinate an approved maintenance window and confirm you have another way to administer the device before disabling Remote Desktop in Settings → System → Remote Desktop or through managed Group Policy.', 'Review Windows Defender Firewall Remote Desktop rules and allow access only from approved management networks.'],
+    verify: 'From an approved management host, confirm the intended RDP access works—or, if disabled, confirm port 3389 is no longer reachable and an alternate management path remains available.'
+  },
+  tamper_protection_off: {
+    steps: ['On an unmanaged endpoint, open Windows Security → Virus & threat protection → Manage settings and turn on Tamper Protection.', 'For managed devices, configure Tamper Protection through Microsoft Defender for Endpoint or the organization’s Intune security policy. Centrally managed settings may override local changes.', 'Check that Defender real-time protection and other required protections are also enabled; Tamper Protection alone does not replace them.'],
+    verify: 'Check Windows Security or the Defender management console after policy sync and confirm Tamper Protection is On. Run a new R3P scan.'
+  },
+  open_network_shares: {
+    steps: ['On the endpoint, open Computer Management → System Tools → Shared Folders → Shares.', 'For each business-required share, open Properties → Share Permissions and remove Everyone or broad groups; grant only the users/groups that need access. Check the Security tab too, because both share and NTFS permissions apply.', 'If a share is not needed, stop sharing it from the Shares view. Do not remove administrative shares without checking remote-management dependencies.'],
+    verify: 'From an elevated PowerShell prompt, review shares with Get-SmbShare and access with Get-SmbShareAccess -Name <ShareName>. Confirm only approved identities have access.'
+  },
+  macro_execution_enabled: {
+    steps: ['In Microsoft 365 Apps, open File → Options → Trust Center → Trust Center Settings → Macro Settings.', 'Choose Disable VBA macros with notification, or the stricter setting required by your organization. Prefer centrally managed Office policy for fleet-wide enforcement.', 'If signed macros are required, publish an approved signing certificate and allow only trusted, signed macros; avoid broadly trusted folders.'],
+    verify: 'Open the Trust Center Macro Settings page and confirm the enforced setting. If managed by policy, check the effective Office policy with your administrator.'
+  },
+  applocker_absent: {
+    steps: ['On a supported Windows edition, open secpol.msc → Application Control Policies → AppLocker.', 'Create the default rules for Executable Rules first so Windows system files and administrators remain usable. Add publisher/path rules for required applications.', 'Set the rule collections to Audit only, review the AppLocker event log for blocked-use candidates, then change to Enforce rules after validating business applications. Deploy via Group Policy for managed fleets.'],
+    verify: 'Review Applications and Services Logs → Microsoft → Windows → AppLocker and confirm the relevant rule collections are enforced. Test a known approved and unapproved application.'
+  },
+  admin_shares_enabled: {
+    steps: ['First confirm that management, backup, and deployment tools do not depend on C$, ADMIN$, or other administrative shares.', 'Prefer restricting inbound SMB (TCP 445) to approved management hosts using Windows Defender Firewall or network controls.', 'If the organization explicitly requires disabling automatic administrative shares, deploy the appropriate AutoShareWks (client) or AutoShareServer (server) DWORD value under HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters, set to 0, through managed policy, then restart the Server service or reboot in a maintenance window.'],
+    verify: 'Run Get-SmbShare and confirm the intended shares are absent or access is restricted. Verify approved remote administration and backup still work.'
+  },
+  vss_deleted: {
+    steps: ['Open System Protection (run systempropertiesprotection.exe), select the system volume, choose Configure, and enable protection.', 'Set an appropriate maximum disk usage and create a restore point. For servers, configure an organization-approved backup/snapshot plan as well.', 'Previously deleted shadow copies cannot be recovered by re-enabling the service; establish new restore points and verify independent backups.'],
+    verify: 'Run vssadmin list shadows and confirm current snapshots exist. Perform a controlled restore test according to your recovery procedure.'
+  },
+  backup_absent: {
+    steps: ['Choose the organization-approved backup product or Windows Server Backup for supported server workloads.', 'Configure scheduled backups for required data and system state. Keep at least one copy isolated or immutable and restrict deletion rights from endpoint administrator accounts.', 'Document retention, encryption, and recovery ownership; do not count a configured job as protection until it has completed successfully.'],
+    verify: 'Check the backup console for recent successful jobs, then perform a test restore to a safe location and record the result.'
+  },
+  bitlocker_off: {
+    steps: ['Before enabling encryption, confirm the device supports BitLocker and ensure its recovery key will be escrowed to Microsoft Entra ID, Active Directory, or your approved key-management system.', 'For a managed device, deploy BitLocker settings using Intune or Group Policy, including the recovery-key backup requirement and approved encryption method.', 'On an individual device, use Control Panel → System and Security → BitLocker Drive Encryption → Turn on BitLocker, then follow the organization’s key-protection policy. Do not start encryption until recovery-key escrow is confirmed.'],
+    verify: 'Run manage-bde -status C: and confirm Protection Status is Protection On. Confirm the recovery key is retrievable from the approved directory.'
+  },
+  laps_absent: {
+    steps: ['Select Windows LAPS and the appropriate storage target: Microsoft Entra ID or Active Directory Domain Services.', 'Deploy the required Windows updates/schema preparation, grant the managed devices permission to update their LAPS passwords, and configure policy for password length, age, and backup directory.', 'Enable Windows LAPS through Intune or Group Policy, then rotate local administrator passwords. Remove shared/static local admin passwords from operational use.'],
+    verify: 'Confirm LAPS policy is applied and a recent password backup timestamp appears in the selected directory. Test authorized retrieval using delegated access.'
+  },
+  mock_attack_vss_enum_succeeded: {
+    steps: ['Review endpoint protection alerts and policy for the simulated Volume Shadow Copy enumeration behavior.', 'Configure the organization’s EDR/AV behavior protection to detect or block suspicious shadow-copy discovery and ransomware preparation, following the vendor’s guidance.', 'Rerun the authorized R3P validation scan after policy propagation; do not attempt to remediate by disabling legitimate backup or recovery services.'],
+    verify: 'The next R3P validation should report the simulation as blocked. Review the EDR event to confirm the expected control produced the block.'
+  },
+  mock_attack_mass_rename_succeeded: {
+    steps: ['Review endpoint protection alerts and policy for rapid file modification or mass-rename behavior.', 'Configure EDR/AV ransomware behavior protection and controlled-folder protections for the directories that need protection, using the vendor’s recommended policy.', 'Rerun the authorized R3P validation after policy propagation and confirm the simulation is contained without disrupting approved applications.'],
+    verify: 'The next R3P validation should report the simulation as blocked. Confirm the EDR event identifies the expected ransomware behavior control.'
+  }
 }
 
 // ── MITRE ATT&CK Mapping ─────────────────────────────────────────────────────

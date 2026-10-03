@@ -2,11 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { X, Plus, ChevronDown } from 'lucide-react';
 import { API_BASE } from '../constants';
 
-export default function PoliciesView({ token }) {
+export default function PoliciesView({ token, target, onViewSystem, onClearTarget }) {
   const [policies, setPolicies] = useState([]);
   const [machines, setMachines] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [newPolicy, setNewPolicy] = useState({ hostname: '', param_key: 'smb_v1_enabled', reason: '' });
+  const visiblePolicies = target
+    ? policies.filter(p => p.hostname === target.hostname && p.param_key === target.param_key)
+    : policies;
 
   const fetchPolicies = useCallback(async () => {
     try {
@@ -65,6 +68,15 @@ export default function PoliciesView({ token }) {
         </div>
       </div>
 
+      {target && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '14px 18px', background: 'var(--overlay)', border: '1px solid var(--border2)', borderRadius: 12 }}>
+          <div style={{ color: 'var(--subtle)', fontSize: 14 }}>
+            Showing exception for <strong style={{ color: 'var(--text)' }}>{target.hostname}</strong> · <strong style={{ color: 'var(--text)' }}>{target.param_key}</strong>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={onClearTarget}>Show all policies</button>
+        </div>
+      )}
+
       <div className="table-wrap">
         <table className="machine-table">
           <thead>
@@ -77,15 +89,18 @@ export default function PoliciesView({ token }) {
             </tr>
           </thead>
           <tbody>
-            {policies.length === 0 ? (
-              <tr><td colSpan="5" className="empty-row">No active policy exceptions.</td></tr>
-            ) : policies.map(p => (
+            {visiblePolicies.length === 0 ? (
+              <tr><td colSpan="5" className="empty-row">{target ? 'No matching active policy exception was found.' : 'No active policy exceptions.'}</td></tr>
+            ) : visiblePolicies.map(p => (
               <tr key={p.id} className="machine-row">
                 <td className="hostname-cell">{p.hostname}</td>
                 <td><span className="mitre-badge" style={{ margin: 0 }}>{p.param_key}</span></td>
                 <td style={{ color: 'var(--subtle)', fontSize: 13 }}>{p.reason || 'No reason provided'}</td>
                 <td style={{ color: 'var(--subtle)', fontSize: 13 }}>{new Date(p.created_at).toLocaleString()}</td>
                 <td>
+                  <button className="btn btn-ghost btn-sm" onClick={() => onViewSystem?.(p.hostname)} style={{ marginRight: 6 }}>
+                    View system
+                  </button>
                   <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(p.id)} style={{ color: 'var(--critical)' }}>
                     Revoke
                   </button>
