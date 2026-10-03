@@ -262,7 +262,7 @@ export default function AboutView() {
                 ))}
               </div>
               <p style={{ color: 'var(--subtle)', fontSize: '13px', lineHeight: '1.6', marginTop: '12px' }}>
-                A successful simulated attack raises the classification to CRITICAL regardless of the numeric score. Any failed check with severity 5 raises the classification to at least HIGH RISK. These rules change the label, while the displayed numeric score remains the calculated score.
+                A successful mock attack sets the effective score to at least 75, so the number and CRITICAL label agree. The underlying weighted findings are still available in the parameter explanations. Any failed check with severity 5 raises the classification to at least HIGH RISK.
               </p>
             </div>
 

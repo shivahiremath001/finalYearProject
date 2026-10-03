@@ -34,8 +34,9 @@ R3P also incorporates **Active Behavioral Validation**: safe, non-destructive mo
 ## Key Features
 
 - 🕵️ **Continuous Telemetry:** Windows agent collecting 27 low-level security parameters across the ransomware attack chain (WMI, Registry, PowerShell, CIM).
-- 🎯 **Active Behavioral Validation:** Safely tests EDR response using benign simulations (VSS reconnaissance, mass temporary file renaming).
+- 🎯 **Active Behavioral Probes:** Runs a read-only VSS inventory query and temporary-file rename probe; these show whether those exact benign actions were allowed.
 - 📊 **Dynamic, Explainable Risk Scoring:** Computes a normalized 0–100 risk score dynamically derived from active weights ($S \times L \times C_{asset}$) with top-factor score explanations (`/machines/{id}/score-explanation`).
+- 🚨 **Consistent Active-Test Escalation:** When a mock attack succeeds, the effective risk score is raised to at least 75/100 so its numeric score agrees with the CRITICAL classification; detailed weighted findings remain available separately.
 - 🚨 **Statistical Posture Drift Detection:** Rolling Z-score anomaly detector with variance floor ($\sigma_{eff} = \max(\sigma, 1.0)$) and remediation drop suppression.
 - ⏱️ **Automatic Agent Offline Detection:** Background server daemon monitoring heartbeat timestamps (`last_seen > 150s`) to mark disconnected nodes.
 - ⚡ **Controlled Remote Remediation:** Admin-confirmed fixes use server and agent allowlists; the agent rescans immediately afterward so the dashboard can verify the observed configuration.
@@ -47,9 +48,15 @@ R3P also incorporates **Active Behavioral Validation**: safe, non-destructive mo
 
 R3P currently offers remote fixes for 17 settings: SMBv1, exposed RDP, USB AutoRun, PowerShell execution policy, UAC, Defender real-time protection, Windows Firewall, Defender Tamper Protection (best effort), Event Log, Guest account, LSASS protection, WDigest, RDP Network Level Authentication, AlwaysInstallElevated, the vulnerable-driver blocklist, HVCI, and one ASR rule. Administrators confirm a fix before it is queued. The confirmation highlights relevant risks, and the agent runs a fresh scan after execution; command completion alone is not treated as proof that protection is active.
 
+### Preparing a Windows Endpoint for a Mock-Attack Demo
+
+Run the collector on a disposable Windows 10/11 test VM with the endpoint protection product and policies you intend to demonstrate enabled. Run the collector elevated so permission failures are less likely to be mistaken for security blocking, and take a VM snapshot before making configuration changes. Do not turn off Defender or tamper protection, add exclusions, or weaken organizational policy just to force a mock test to pass or fail.
+
+The VSS test performs a read-only inventory query, which Windows commonly permits; the mass-rename test only renames disposable files under the agent's temporary folder. A successful result means that exact benign action was allowed, not that ransomware encryption or VSS deletion would necessarily succeed. Default Windows Defender settings may allow these probes, and CFA/ASR rules do not necessarily target these exact actions. For a reliable presentation of individual settings/remediations, use simulated telemetry (`python demo_collector.py`) for the fleet view and a resettable Windows VM for actual configuration changes. Label simulated results clearly and do not present them as live endpoint enforcement evidence.
+
 RDP disablement and Tamper Protection also include manual guidance: disabling RDP can cut off administration, and the Tamper Protection command is best effort, so verify it through Windows Security or the organization’s Defender/Intune policy. Other organization-dependent settings (such as backups, BitLocker recovery-key escrow, AppLocker, LAPS, and EDR behavior rules) show tailored guidance. The PowerShell execution-policy action is labeled as defense in depth: it is not a security boundary.
 
-If agents are distributed as compiled executables, rebuild the agent from `collector.py` and redeploy it to receive the immediate post-remediation scan behavior.
+If agents are distributed as compiled executables, rebuild the agent from the updated `collector.py` and redeploy it to receive the in-app fix guide and current remediation behavior.
 
 ---
 
@@ -126,6 +133,12 @@ python analysis/validate.py
 ## Security Model
 
 R3P uses an allowlist-based remote execution model. No arbitrary code or dynamic scripts are transmitted across the network. An administrator confirms a fix in the dashboard; the backend queues a pre-approved command key, and the agent checks that key against its local allowlist before executing PowerShell. The agent then performs a fresh scan so the dashboard can compare the resulting configuration. This verification is separate from the command execution acknowledgment.
+
+## Windows agent fix guide
+
+Open **Fix guide** in the R3P Windows agent to browse remediation guidance, or choose **How to fix** next to a finding. Each guide explains why the check matters, safe manual steps, how to verify the result, and any important cautions. A guide is informational and never runs a command. Where an allowlisted local fix exists, **Apply fix** is a separate action and asks for confirmation first. It can require administrator rights, a restart, or coordination with centrally managed policy; review the guide and preserve a remote-management path before applying changes. Findings without an allowlisted fix must be handled through Windows or the organization's approved device-management process.
+
+The active validation probes are limited simulations. The VSS probe performs a read-only WMI enumeration and does not delete shadow copies. The mass-rename probe creates disposable files under the agent's `%TEMP%` subfolder and renames those files; it does not encrypt user documents. An allowed probe is not proof that real ransomware would succeed, and a blocked probe is not proof of complete ransomware protection. In particular, a generic Defender setting or Controlled Folder Access is not guaranteed to block these exact probes. Review endpoint protection events and use vendor-supported validation in a disposable lab; do not disable WMI/backups, weaken protection, or add broad exclusions to force a desired result.
 
 ---
 **License**: Academic / Open-Source Project

@@ -4,7 +4,7 @@
 
 :root {
   /* Apple Dark Mode Palette */
-  --bg:          #000000; 
+  --bg:          #0c0c0c; 
   --card:        rgba(28, 28, 30, 0.7); 
   --card2:       rgba(44, 44, 46, 0.7); 
   
@@ -40,7 +40,7 @@
 
 [data-theme="light"] {
   /* Apple Light Mode Palette */
-  --bg:          #f2f2f7; 
+  --bg:          #e4e4ff; 
   --card:        rgba(255, 255, 255, 0.8); 
   --card2:       rgba(255, 255, 255, 0.9); 
   
@@ -48,8 +48,8 @@
   --border2:     rgba(0, 0, 0, 0.15); 
   
   --text:        #000000; 
-  --subtle:      #3c3c4399; 
-  --faint:       #3c3c434d; 
+  --subtle:      #2b2b3099; 
+  --faint:       #2020244d; 
   
   --overlay:       rgba(0, 0, 0, 0.03);
   --overlay-hover: rgba(0, 0, 0, 0.06);

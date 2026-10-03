@@ -500,11 +500,18 @@ def score(
     # Remove empty phases
     flagged = {k: v for k, v in flagged.items() if v}
 
-    # Normalize to 0-100 scale
+    # Normalize the weighted posture findings to 0-100.
     normalized_score = (
         (total_risk / max_possible_risk) * 100.0 if max_possible_risk > 0 else 0.0
     )
     normalized_score = min(normalized_score, 100.0)
+
+    # A successful active-validation test means an important behavioral
+    # protection did not stop the tested action. Keep the numeric score aligned
+    # with the CRITICAL label by applying the lower bound of the CRITICAL band.
+    # The ordinary weighted findings remain visible in per-parameter details.
+    if has_mock_attack_success:
+        normalized_score = max(normalized_score, 75.0)
 
     # ── Classification — matches project specification exactly ──────────────
     # Primary bands by numeric score
@@ -516,10 +523,6 @@ def score(
         risk_class = "LOW RISK"
     else:
         risk_class = "SAFE"
-
-    # Escalation rule 1: any mock attack succeeded → CRITICAL
-    if has_mock_attack_success:
-        risk_class = "CRITICAL"
 
     # Escalation rule 2: any S=5 failure → at least HIGH RISK
     if has_critical_failure and risk_class in ("SAFE", "LOW RISK"):

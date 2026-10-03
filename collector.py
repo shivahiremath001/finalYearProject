@@ -27,7 +27,7 @@ import time
 import concurrent.futures
 from datetime import datetime
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import pystray
 from pystray import MenuItem as item
 from PIL import Image, ImageDraw
@@ -122,7 +122,58 @@ ABOUT_INFO = {
         "AlwaysInstallElevated Enabled",
         "This policy allows any standard user to install MSI packages with SYSTEM privileges, a massive escalation vector.",
     ),
+    "mock_attack_vss_enum_succeeded": (
+        "Mock Check: Shadow Copy Enumeration Allowed",
+        "The agent's mock check performs a read-only WMI query to list Volume Shadow Copies. It does not delete snapshots, and an allowed query alone does not show that ransomware could remove backups.",
+    ),
+    "mock_attack_mass_rename_succeeded": (
+        "Mock Check: Temporary File Rename Allowed",
+        "The agent's mock check creates disposable files in its own %TEMP% subfolder and renames them. It does not encrypt user files; this limited simulation cannot prove how protection would respond to real ransomware.",
+    ),
 }
+
+# Practical, non-destructive remediation guidance for every finding the agent
+# can report. The guide is informational only; it never runs commands.
+MANUAL_FIX_GUIDES = {
+    "smb_v1_enabled": ("Disable the legacy SMBv1 protocol in Windows Features or through your approved endpoint policy. Confirm legacy devices and applications do not depend on SMBv1 before rollout.", "In elevated PowerShell, check (Get-SmbServerConfiguration).EnableSMB1Protocol; it should be False. Reboot if Windows requests it.", "Administrator rights; verify legacy file-sharing compatibility before changing fleet policy."),
+    "rdp_open": ("If remote desktop is not needed, disable it in Settings → System → Remote Desktop. If it is needed, keep it behind VPN or an approved gateway, restrict inbound firewall scope, require MFA where available, and use strong unique accounts.", "From an approved management host, check that access is limited to the intended route and identities. Do not disable RDP until you confirm an alternate management path.", "Disabling RDP can lock out remote administration. Coordinate a maintenance window."),
+    "autorun_enabled": ("Use Group Policy at Computer Configuration → Administrative Templates → Windows Components → AutoPlay Policies and enable Turn off AutoPlay for all drives. Apply the setting through your device-management policy.", "Run gpupdate /force, then review the effective AutoPlay policy. Test with approved removable media.", "Managed policy may override local settings."),
+    "powershell_unrestricted": ("Ask your security administrator to set an approved PowerShell execution policy. RemoteSigned is a common baseline, but it is not a security boundary; use application control and script logging for stronger controls.", "Run Get-ExecutionPolicy -List and confirm effective scopes match your organization's baseline.", "Changing script policy can affect administrative and business scripts; validate required automation first."),
+    "uac_disabled": ("Turn User Account Control back on through Control Panel → User Accounts → Change User Account Control settings, or deploy EnableLUA through managed policy.", "Confirm EnableLUA is 1 and verify the expected consent prompt. A restart may be required.", "Administrator rights and restart may be required."),
+    "defender_disabled": ("Open Windows Security → Virus & threat protection and enable Real-time protection. For managed devices, restore the setting in the organization's Defender/Intune policy and investigate why it was disabled.", "Confirm Defender reports real-time protection on after policy sync; run a new R3P scan.", "Managed policy or third-party antivirus registration can control this setting. Do not disable other protection to change the result."),
+    "firewall_disabled": ("Open Windows Security → Firewall & network protection and enable Microsoft Defender Firewall for each applicable profile, or restore the approved central firewall policy.", "Check Domain, Private, and Public profiles with Get-NetFirewallProfile; enabled profiles should show True.", "Review required application and management rules before enabling; policy may be centrally managed."),
+    "tamper_protection_off": ("For unmanaged devices, open Windows Security → Virus & threat protection → Manage settings and enable Tamper Protection. For managed devices, correct the Microsoft Defender/Intune policy.", "After policy sync, confirm Tamper Protection is on in Windows Security or the Defender portal.", "Local changes can be blocked or reverted by central policy."),
+    "event_logging_disabled": ("Restore the Windows Event Log service to Automatic and start it in Services, or have the administrator repair the service through managed configuration. Check dependent services before changing service state.", "In Services, confirm Windows Event Log is running and review recent Security/System events.", "Administrator rights may be required; avoid clearing logs."),
+    "guest_account_active": ("In Computer Management → Local Users and Groups → Users, disable the built-in Guest account, or run the approved identity policy. Do not delete the account.", "Confirm the Guest account is disabled and check that approved user sign-in still works.", "Administrator rights; domain policy may control the account."),
+    "lsass_protection_off": ("Enable Local Security Authority protection using the organization's Windows security baseline or Microsoft Defender policy. Check application compatibility and supported Windows versions first.", "Confirm the effective LSA protection state using the Defender portal or the approved security baseline audit.", "A restart may be required; test credential and authentication integrations before rollout."),
+    "open_network_shares": ("Review Computer Management → Shared Folders → Shares. For each required share, remove broad access such as Everyone and grant only approved groups. Review both share and NTFS permissions. Remove unused shares only after confirming dependencies.", "Use Get-SmbShareAccess -Name <ShareName> and verify an authorized user can access required data while unapproved users cannot.", "Permission changes can interrupt applications; retain a recovery path and review both permission layers."),
+    "macro_execution_enabled": ("In Microsoft Office, open File → Options → Trust Center → Trust Center Settings → Macro Settings. Select the organization-approved restrictive option; prefer centrally managed Office policy. Allow signed macros only when signing and certificate management are established.", "Review effective Office policy and test required signed business documents.", "Restrictive macro settings can affect workflows; avoid broadly trusted folders."),
+    "applocker_absent": ("Ask an administrator to design AppLocker or Windows Defender Application Control rules for this Windows edition. Start in Audit mode, review events, and only then enforce a tested policy.", "Review the AppLocker event log and confirm approved apps run before enforcement.", "Requires careful planning and often administrator or domain-policy access; premature enforcement can block business software."),
+    "admin_shares_enabled": ("Restrict inbound SMB access to approved management systems with firewall/network policy. Disable administrative shares only if IT, backup, and deployment tools no longer rely on them.", "Review Get-SmbShare and test approved remote management and backup workflows.", "Disabling admin shares can break remote administration and deployment; coordinate with IT."),
+    "vss_deleted": ("Enable System Protection for required volumes and configure restore points. Configure independent, protected backups as well. Previously deleted shadow copies cannot be recreated; establish new recovery points.", "Run vssadmin list shadows and verify snapshots exist; perform a controlled restore test.", "Restore points are not a substitute for isolated backups. Do not disable backup services."),
+    "backup_configured": ("Configure the organization's approved backup for required data and system state. Keep a copy isolated or immutable and restrict who can delete backups.", "Confirm a recent backup job succeeded and test a restore to a safe location.", "Requires backup ownership, storage, retention planning, and restore testing."),
+    "bitlocker_off": ("Before enabling BitLocker, confirm device support and escrow the recovery key to the approved directory. Then configure encryption through Intune/Group Policy or BitLocker Drive Encryption.", "Use manage-bde -status and verify Protection Status is Protection On; confirm the recovery key is retrievable.", "Do not start encryption until recovery-key escrow is verified. Deployment may require admin rights and a restart."),
+    "wdigest_enabled": ("Set the UseLogonCredential policy under HKLM\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest to 0, preferably through the organization's security baseline. Remove any obsolete policy that sets it to 1.", "Verify the effective registry value is 0 and review the applied policy; restart if required by your baseline.", "Administrator rights; centrally managed policy may reapply the insecure value."),
+    "laps_absent": ("Ask IT to deploy Windows LAPS: choose Entra ID or Active Directory backup, prepare permissions/schema as required, configure password policy, then enable it through Intune or Group Policy. Stop using shared local administrator passwords.", "Confirm policy is applied and a recent password backup timestamp exists in the selected directory.", "Requires directory/device-management configuration and delegated access; do not expose LAPS passwords in notes or chat."),
+    "nla_disabled": ("If RDP is required, enable Network Level Authentication in Settings → System → Remote Desktop → Advanced settings or enforce it through policy. First confirm clients support NLA.", "Check the RDP-Tcp UserAuthentication setting is 1 and test from an approved client.", "May affect older RDP clients; do not change remotely without a fallback path."),
+    "always_install_elevated": ("Use Group Policy to ensure AlwaysInstallElevated is disabled for both Computer and User configuration under Windows Installer policy. Remove only the corresponding policy values through approved management.", "Check both HKLM and HKCU policy values; neither should enable AlwaysInstallElevated.", "Administrator rights and managed-policy review may be required."),
+    "vulnerable_driver_blocklist_enabled": ("If the finding indicates the vulnerable-driver blocklist is missing, enable the Microsoft vulnerable driver blocklist through Windows Security or the organization's device policy. Check Windows version and hardware support with IT.", "Verify the effective blocklist policy in Windows Security or the management console, then run a fresh scan.", "Driver blocking can affect legacy hardware/software. Do not disable the blocklist to clear a finding; confirm how this parameter is interpreted in your agent version."),
+    "hvci_enabled": ("If the finding indicates Memory Integrity is off, enable it in Windows Security → Device security → Core isolation details, or deploy the approved policy through Intune/Group Policy.", "Confirm Memory Integrity is on after restart and policy sync, then run a fresh scan.", "Review incompatible drivers first. This feature may require compatible hardware and a restart; parameter naming can vary by agent version."),
+    "asr_rules_configured": ("Have IT choose relevant Defender Attack Surface Reduction rules and deploy in Audit mode first. Review events and application compatibility before enforcing the approved rules through central policy.", "Review effective ASR rule IDs and actions in the Defender portal or Get-MpPreference, then run a fresh scan.", "Rules can affect applications; this check may only establish that rules are present, not that the recommended set and actions are effective."),
+    "mock_attack_vss_enum_succeeded": ("Review Defender/EDR telemetry and your organization's behavior-protection policy. This probe only performs a read-only WMI query to enumerate shadow copies; it does not delete them. An allowed query does not prove ransomware could delete backups. Use vendor-supported policy and lab validation rather than trying to block all WMI.", "Review the corresponding security-product event and rerun an authorized scan after policy changes. Interpret the result as this probe's behavior only.", "Do not disable WMI or backup services. A generic Defender toggle is not guaranteed to block this read-only query."),
+    "mock_attack_mass_rename_succeeded": ("Review Defender/EDR events and configured ransomware behavior protections. This probe creates disposable files in the agent's %TEMP% subfolder and renames them; it does not encrypt user documents. Use a controlled test directory and vendor-supported policy validation.", "Review the security-product event and rerun an authorized scan. Treat the result as a limited simulation, not proof of protection or failure against real ransomware.", "Do not add broad exclusions or weaken protection. Controlled Folder Access may not block writes outside protected folders such as this temporary test directory."),
+}
+# Backend parameter names are the canonical keys shown in findings. Keep aliases
+# for collector-side labels so the guide works across both response shapes.
+MANUAL_FIX_GUIDES.update({
+    "rdp_enabled": MANUAL_FIX_GUIDES["rdp_open"],
+    "backup_absent": MANUAL_FIX_GUIDES["backup_configured"],
+})
+ABOUT_INFO.update({
+    "rdp_enabled": ABOUT_INFO["rdp_open"],
+    "firewall_disabled": ("Windows Firewall Disabled", ABOUT_INFO["firewall_on"][1]),
+    "backup_absent": ("Backup Not Configured", ABOUT_INFO["backup_configured"][1]),
+})
 
 try:
     import requests
@@ -147,18 +198,18 @@ CONFIG_FILE = os.path.join(_BASE, "r3p_server.txt")
 AGENT_CONFIG_FILE = os.path.join(_BASE, "agent_config.json")
 
 COLORS = {
-    "bg": "#111111",
-    "card": "#111111",
-    "border": "#333333",
-    "accent": "#555555",
-    "text": "#dddddd",
-    "subtle": "#777777",
-    "safe": "#4caf50",
-    "low": "#ff9800",
-    "high": "#f44336",
-    "critical": "#d32f2f",
-    "warning": "#ffeb3b",
-    "info": "#2196f3",
+    "bg": "#101923",
+    "card": "#172432",
+    "border": "#2b3b4a",
+    "accent": "#159a9c",
+    "text": "#edf4f8",
+    "subtle": "#a7b8c5",
+    "safe": "#45b982",
+    "low": "#e4ae54",
+    "high": "#e16e62",
+    "critical": "#c94c53",
+    "warning": "#e4ae54",
+    "info": "#58b9d0",
 }
 
 RISK_COLORS = {
@@ -166,80 +217,6 @@ RISK_COLORS = {
     "LOW RISK": COLORS["low"],
     "HIGH RISK": COLORS["high"],
     "CRITICAL": COLORS["critical"],
-}
-
-# ── REMEDIATION ALLOWLIST (must mirror backend/remediation_registry.py) ───────
-# SECURITY: Only keys cross the network. PowerShell lives here, locally.
-AGENT_REMEDIATION = {
-    "disable_smb1": (
-        "Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force; "
-        "Write-Output 'SMBv1 disabled successfully.'"
-    ),
-    "block_rdp": (
-        "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' "
-        "-Name 'fDenyTSConnections' -Value 1; "
-        "Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue; "
-        "Write-Output 'RDP disabled.'"
-    ),
-    "disable_autorun": (
-        "$path = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; "
-        "If (!(Test-Path $path)) { New-Item -Path $path -Force }; "
-        "Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord; "
-        "Write-Output 'AutoRun disabled.'"
-    ),
-    "restrict_powershell": (
-        "Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force; "
-        "Write-Output 'PowerShell execution policy set to RemoteSigned.'"
-    ),
-    "enable_uac": (
-        "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' "
-        "-Name 'EnableLUA' -Value 1; "
-        "Write-Output 'UAC enabled.'"
-    ),
-    "enable_defender": (
-        "Set-MpPreference -DisableRealtimeMonitoring $false; "
-        "Start-Service -Name WinDefend -ErrorAction SilentlyContinue; "
-        "Write-Output 'Windows Defender enabled.'"
-    ),
-    "enable_firewall": (
-        "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True; "
-        "Write-Output 'Windows Firewall enabled.'"
-    ),
-    "enable_tamper_protection": (
-        "Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue; "
-        "Write-Output 'Tamper Protection change attempted; verify effective state.'"
-    ),
-    "enable_event_log": (
-        "Set-Service -Name 'eventlog' -StartupType Automatic; "
-        "Start-Service -Name 'eventlog'; "
-        "Write-Output 'Event Log service started.'"
-    ),
-    "disable_guest": (
-        "Disable-LocalUser -Name 'Guest' -ErrorAction SilentlyContinue; "
-        "Write-Output 'Guest account disabled.'"
-    ),
-    "enable_lsass_protection": (
-        "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa' "
-        "-Name 'RunAsPPL' -Value 1 -Type DWord; "
-        "Write-Output 'LSASS PPL protection enabled.'"
-    ),
-    "disable_wdigest": (
-        "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' "
-        "-Name 'UseLogonCredential' -Value 0 -Type DWord; "
-        "Write-Output 'WDigest UseLogonCredential disabled.'"
-    ),
-    "enable_nla": (
-        "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' "
-        "-Name 'UserAuthentication' -Value 1 -Type DWord; "
-        "Write-Output 'NLA enabled for RDP.'"
-    ),
-    "disable_always_install_elevated": (
-        "Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' "
-        "-Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; "
-        "Remove-ItemProperty -Path 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' "
-        "-Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; "
-        "Write-Output 'AlwaysInstallElevated disabled.'"
-    ),
 }
 
 PARAM_TO_CMD_KEY = {
@@ -565,11 +542,12 @@ def check_asr_rules_configured() -> bool:
         return False
 
 
-# ── ACTIVE VALIDATION (MOCK ATTACKS) ───────────────────────────────────────────
+# ── ACTIVE VALIDATION (BENIGN BEHAVIOR PROBES) ─────────────────────────────────
 def run_mock_attack_vss_enum() -> bool:
     """
-    Simulates ransomware looking for Shadow Copies to delete.
-    Returns True if BLOCKED (Safe), False if SUCCEEDED (Risky).
+    Runs a read-only WMI inventory query for shadow copies.
+    True means the query did not complete; False means it was allowed.
+    A failure is not necessarily proof that endpoint protection blocked it.
     """
     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     try:
@@ -581,16 +559,17 @@ def run_mock_attack_vss_enum() -> bool:
             creationflags=flags,
         )
         if r.returncode != 0:
-            return True # Blocked by ASR/EDR
-        return False # Succeeded
+            return True  # Query did not complete; cause may not be endpoint protection.
+        return False  # Read-only inventory query was allowed.
     except Exception:
         return True
 
 
 def run_mock_attack_mass_rename() -> bool:
     """
-    Simulates ransomware rapidly renaming files to .locked.
-    Returns True if BLOCKED/KILLED (Safe), False if ALL 100 renamed (Risky).
+    Renames 100 disposable files in the agent's temporary test directory.
+    True means the full operation did not complete; False means all renames worked.
+    A partial run or error is not necessarily proof that endpoint protection blocked it.
     """
     import tempfile
     import shutil
@@ -637,11 +616,11 @@ def run_mock_attack_mass_rename() -> bool:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
         if r.returncode != 0 or len(locked_files) < 100:
-            return True  # Blocked or interrupted
-        return False  # Successfully renamed all 100 files (EDR failed to block)
+            return True  # Incomplete; the cause may be an error or interruption.
+        return False  # All disposable test-file renames were allowed.
 
     except Exception:
-        return True  # Something blocked or crashed it
+        return True  # Incomplete; the cause may not be endpoint protection.
 
 
 # ── CHECK MANIFEST ─────────────────────────────────────────────────────────────
@@ -919,8 +898,9 @@ class MonitorApp(tk.Tk):
 
         self.title("R3P — Continuous Security Monitor")
         self.configure(bg=COLORS["bg"])
-        self.resizable(False, False)
-        self._center(520, 560)
+        self.minsize(520, 500)
+        self.resizable(True, True)
+        self._center(560, 650)
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -969,17 +949,34 @@ class MonitorApp(tk.Tk):
         # Right side info button
         about_btn = tk.Button(
             hdr,
-            text="ⓘ",
-            font=("Segoe UI", 16, "bold"),
-            bg=COLORS["bg"],
-            fg=COLORS["info"],
+            text="About",
+            font=("Segoe UI", 9, "bold"),
+            bg=COLORS["card"],
+            fg=COLORS["text"],
             bd=0,
-            activebackground=COLORS["bg"],
+            activebackground=COLORS["border"],
             activeforeground=COLORS["text"],
             cursor="hand2",
             command=self._show_about,
+            padx=12,
+            pady=7,
         )
         about_btn.pack(side="right", anchor="n")
+        tk.Button(
+            hdr,
+            text="Fix guide",
+            font=("Segoe UI", 9, "bold"),
+            bg=COLORS["accent"],
+            fg="white",
+            activebackground="#117f82",
+            activeforeground="white",
+            relief="flat",
+            bd=0,
+            cursor="hand2",
+            command=self._show_all_fix_guides,
+            padx=12,
+            pady=7,
+        ).pack(side="right", anchor="n", padx=(0, 8))
 
         # Status card
         self.status_card = tk.Frame(
@@ -1079,8 +1076,14 @@ class MonitorApp(tk.Tk):
             ),
         )
 
-        self.result_canvas.create_window(
+        self._result_window = self.result_canvas.create_window(
             (0, 0), window=self.result_inner, anchor="nw", width=380
+        )
+        self.result_canvas.bind(
+            "<Configure>",
+            lambda event: self.result_canvas.itemconfigure(
+                self._result_window, width=max(380, event.width - 4)
+            ),
         )
         self.result_canvas.configure(yscrollcommand=self.result_scrollbar.set)
 
@@ -1152,9 +1155,9 @@ class MonitorApp(tk.Tk):
     # ── System Tray Logic ─────────────────────────────────────────────────
     def _create_tray_image(self):
         # Create a simple shield/dot image for the tray
-        img = Image.new("RGB", (64, 64), color=(13, 17, 23))
+        img = Image.new("RGB", (64, 64), color=(16, 25, 35))
         d = ImageDraw.Draw(img)
-        d.ellipse([16, 16, 48, 48], fill=(108, 99, 255))
+        d.ellipse([16, 16, 48, 48], fill=(21, 154, 156))
         return img
 
     def _setup_tray(self):
@@ -1410,41 +1413,68 @@ class MonitorApp(tk.Tk):
                         fg=COLORS["subtle"],
                     ).pack(anchor="w", pady=(6, 2))
                     for flag_item in items:
-                        r2 = tk.Frame(self.result_inner, bg=COLORS["card"])
-                        r2.pack(anchor="w", pady=1)
-                        tk.Label(
-                            r2,
-                            text="•",
-                            font=("Segoe UI", 9),
-                            bg=COLORS["card"],
-                            fg=color,
-                        ).pack(side="left", padx=(8, 4))
-
-                        tk.Label(
-                            r2,
+                        card = tk.Frame(
+                            self.result_inner,
+                            bg=COLORS["bg"],
+                            highlightthickness=1,
+                            highlightbackground=COLORS["border"],
+                            padx=10,
+                            pady=8,
+                        )
+                        card.pack(fill="x", padx=2, pady=4)
+                        title_label = tk.Label(
+                            card,
                             text=flag_item.replace("_", " ").title(),
-                            font=("Segoe UI", 9),
-                            bg=COLORS["card"],
-                            fg=COLORS["text"],
-                        ).pack(side="left")
+                            font=("Segoe UI", 9, "bold"),
+                            bg=COLORS["bg"],
+                            fg=color,
+                            anchor="w",
+                            justify="left",
+                            wraplength=380,
+                        )
+                        title_label.pack(fill="x", anchor="w")
+                        title_label.bind(
+                            "<Configure>",
+                            lambda event, label=title_label: label.configure(
+                                wraplength=max(180, event.width)
+                            ),
+                        )
 
+                        actions = tk.Frame(card, bg=COLORS["bg"])
+                        actions.pack(fill="x", pady=(6, 0))
                         cmd_key = PARAM_TO_CMD_KEY.get(flag_item)
-                        if cmd_key:
+                        has_fix = cmd_key in AGENT_REMEDIATION
+                        if has_fix:
                             tk.Button(
-                                r2,
-                                text="Fix",
-                                font=("Segoe UI", 7, "bold"),
-                                bg=COLORS["accent"],
-                                fg="white",
-                                activebackground=COLORS["safe"],
+                                actions,
+                                text="Apply fix",
+                                font=("Segoe UI", 8),
+                                bg=COLORS["border"],
+                                fg=COLORS["text"],
+                                activebackground=COLORS["accent"],
                                 activeforeground="white",
                                 relief="flat",
                                 bd=0,
-                                padx=6,
-                                pady=2,
+                                padx=9,
+                                pady=4,
                                 cursor="hand2",
                                 command=lambda k=cmd_key: self._on_fix_clicked(k),
-                            ).pack(side="right", padx=(0, 4))
+                            ).pack(side="right", padx=(5, 0))
+                        tk.Button(
+                            actions,
+                            text="How to fix",
+                            font=("Segoe UI", 8, "bold"),
+                            bg=COLORS["accent"],
+                            fg="white",
+                            activebackground="#117f82",
+                            activeforeground="white",
+                            relief="flat",
+                            bd=0,
+                            padx=10,
+                            pady=4,
+                            cursor="hand2",
+                            command=lambda k=flag_item: self._show_fix_guide(k),
+                        ).pack(side="right")
         else:
             tk.Label(
                 self.result_inner,
@@ -1462,7 +1492,137 @@ class MonitorApp(tk.Tk):
             fg=COLORS["safe"],
         ).pack(anchor="w", pady=(10, 0))
 
+    def _show_fix_guide(self, param_key: str):
+        """Show safe manual guidance; opening this guide never applies a fix."""
+        title, description = ABOUT_INFO.get(
+            param_key,
+            (param_key.replace("_", " ").title(),
+             "This finding needs review against the effective Windows and organization policy."),
+        )
+        steps, verify, caution = MANUAL_FIX_GUIDES.get(
+            param_key,
+            ("Review the setting with your Windows or security administrator and use the approved baseline for this device. Avoid changing a managed endpoint without authorization.",
+             "Confirm the effective setting in Windows or the management console, then run a fresh R3P scan.",
+             "The parameter mapping may vary by Windows edition or organization policy."),
+        )
+        cmd_key = PARAM_TO_CMD_KEY.get(param_key)
+        has_fix = cmd_key in AGENT_REMEDIATION
+        dialog = tk.Toplevel(self)
+        dialog.title(f"How to fix — {title}")
+        dialog.configure(bg=COLORS["bg"])
+        dialog.geometry("560x560")
+        dialog.minsize(500, 440)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.scrollable_canvas = tk.Canvas(dialog, bg=COLORS["bg"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=dialog.scrollable_canvas.yview)
+        body = tk.Frame(dialog.scrollable_canvas, bg=COLORS["bg"], padx=24, pady=20)
+        body.bind("<Configure>", lambda _e: dialog.scrollable_canvas.configure(scrollregion=dialog.scrollable_canvas.bbox("all")))
+        body_window = dialog.scrollable_canvas.create_window((0, 0), window=body, anchor="nw")
+        dialog.scrollable_canvas.bind("<Configure>", lambda event: dialog.scrollable_canvas.itemconfigure(body_window, width=event.width))
+        dialog.scrollable_canvas.configure(yscrollcommand=scrollbar.set)
+        dialog.scrollable_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def section(label, text, color=None):
+            tk.Label(body, text=label.upper(), font=("Segoe UI", 9, "bold"), bg=COLORS["bg"], fg=color or COLORS["info"]).pack(anchor="w", pady=(14, 4))
+            tk.Label(body, text=text, font=("Segoe UI", 10), bg=COLORS["bg"], fg=COLORS["text"], wraplength=480, justify="left", anchor="w").pack(fill="x")
+
+        tk.Label(body, text=title, font=("Segoe UI", 17, "bold"), bg=COLORS["bg"], fg=COLORS["text"], wraplength=480, justify="left").pack(anchor="w")
+        section("Why this matters", description)
+        section("Manual steps", steps)
+        section("Verify", verify, COLORS["safe"])
+        section("Caution", caution, COLORS["warning"])
+        if has_fix:
+            section("R3P automated option", "An allowlisted Apply fix action is available for this parameter. It runs a predefined local command only after explicit confirmation; it is separate from these manual instructions.", COLORS["accent"])
+        else:
+            section("R3P automated option", "No allowlisted one-click fix is available for this parameter. Use the manual guidance and your approved endpoint-management workflow.", COLORS["subtle"])
+        tk.Button(body, text="Close", font=("Segoe UI", 9, "bold"), bg=COLORS["border"], fg=COLORS["text"], relief="flat", padx=16, pady=7, command=dialog.destroy).pack(anchor="e", pady=(18, 0))
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
+
+    def _show_all_fix_guides(self):
+        """Offer a searchable, phase-grouped guide directory before a scan."""
+        dialog = tk.Toplevel(self)
+        dialog.title("R3P finding fix guide")
+        dialog.configure(bg=COLORS["bg"])
+        dialog.geometry("540x620")
+        dialog.minsize(500, 460)
+        dialog.transient(self)
+        dialog.scrollable_canvas = tk.Canvas(dialog, bg=COLORS["bg"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=dialog.scrollable_canvas.yview)
+        body = tk.Frame(dialog.scrollable_canvas, bg=COLORS["bg"], padx=20, pady=18)
+        body.bind("<Configure>", lambda _e: dialog.scrollable_canvas.configure(scrollregion=dialog.scrollable_canvas.bbox("all")))
+        body_window = dialog.scrollable_canvas.create_window((0, 0), window=body, anchor="nw")
+        dialog.scrollable_canvas.bind("<Configure>", lambda event: dialog.scrollable_canvas.itemconfigure(body_window, width=event.width))
+        dialog.scrollable_canvas.configure(yscrollcommand=scrollbar.set)
+        dialog.scrollable_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        tk.Label(body, text="Finding fix guide", font=("Segoe UI", 17, "bold"), bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w")
+        tk.Label(body, text="Choose a finding to see safe manual steps, verification, and any available allowlisted fix.", font=("Segoe UI", 10), bg=COLORS["bg"], fg=COLORS["subtle"], wraplength=460, justify="left").pack(anchor="w", pady=(5, 14))
+        tk.Label(body, text="SEARCH FINDINGS", font=("Segoe UI", 8, "bold"), bg=COLORS["bg"], fg=COLORS["subtle"]).pack(anchor="w", pady=(0, 4))
+        query = tk.StringVar()
+        search = tk.Entry(body, textvariable=query, font=("Segoe UI", 10), bg=COLORS["card"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", highlightthickness=1, highlightbackground=COLORS["border"], highlightcolor=COLORS["accent"])
+        search.pack(fill="x", ipady=7, pady=(0, 12))
+        results = tk.Frame(body, bg=COLORS["bg"])
+        results.pack(fill="x")
+
+        groups = {
+            "Entry & execution": ["smb_v1_enabled", "rdp_enabled", "autorun_enabled", "macro_execution_enabled", "powershell_unrestricted"],
+            "Access & privilege": ["open_network_shares", "admin_shares_enabled", "nla_disabled", "guest_account_active", "uac_disabled", "always_install_elevated", "wdigest_enabled", "lsass_protection_off", "laps_absent"],
+            "Protection controls": ["defender_disabled", "firewall_disabled", "tamper_protection_off", "event_logging_disabled", "applocker_absent", "vulnerable_driver_blocklist_enabled", "hvci_enabled", "asr_rules_configured"],
+            "Recovery & resilience": ["vss_deleted", "backup_absent", "bitlocker_off"],
+            "Active validation (mock checks)": ["mock_attack_vss_enum_succeeded", "mock_attack_mass_rename_succeeded"],
+        }
+
+        def render_guides(*_args):
+            for child in results.winfo_children():
+                child.destroy()
+            needle = query.get().strip().casefold()
+            shown = 0
+            for category, keys in groups.items():
+                matching = []
+                for key in keys:
+                    if key not in MANUAL_FIX_GUIDES:
+                        continue
+                    title = ABOUT_INFO.get(key, (key.replace("_", " ").title(),))[0]
+                    cmd = PARAM_TO_CMD_KEY.get(key)
+                    automated = cmd in AGENT_REMEDIATION
+                    search_text = f"{title} {key} {category} {'automated fix' if automated else 'manual only'}".casefold()
+                    if not needle or needle in search_text:
+                        matching.append((key, title, automated))
+                if not matching:
+                    continue
+                tk.Label(results, text=category.upper(), font=("Segoe UI", 8, "bold"), bg=COLORS["bg"], fg=COLORS["info"]).pack(anchor="w", pady=(8, 4))
+                for key, title, automated in matching:
+                    row = tk.Frame(results, bg=COLORS["card"], padx=9, pady=7)
+                    row.pack(fill="x", pady=2)
+                    tk.Button(row, text=title, font=("Segoe UI", 9, "bold"), bg=COLORS["card"], fg=COLORS["text"], activebackground=COLORS["border"], activeforeground=COLORS["text"], anchor="w", relief="flat", bd=0, cursor="hand2", command=lambda k=key: self._show_fix_guide(k)).pack(side="left", fill="x", expand=True)
+                    status = "AUTOMATED FIX" if automated else "MANUAL ONLY"
+                    status_color = COLORS["accent"] if automated else COLORS["subtle"]
+                    tk.Label(row, text=status, font=("Segoe UI", 7, "bold"), bg=COLORS["card"], fg=status_color).pack(side="right", padx=(7, 0))
+                    shown += 1
+            if shown == 0:
+                tk.Label(results, text="No matching guides. Try a shorter search.", font=("Segoe UI", 9), bg=COLORS["bg"], fg=COLORS["subtle"]).pack(anchor="w", pady=12)
+
+        query.trace_add("write", render_guides)
+        render_guides()
+        search.focus_set()
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
+
     def _on_fix_clicked(self, cmd_key: str):
+        """Require an explicit confirmation before a local allowlisted change."""
+        if cmd_key not in AGENT_REMEDIATION:
+            messagebox.showerror("Fix unavailable", "This fix is not in the agent's local allowlist.", parent=self)
+            return
+        confirmed = messagebox.askyesno(
+            "Confirm configuration change",
+            f"Apply the predefined '{cmd_key}' fix on this endpoint now?\n\n"
+            "This may change Windows settings and may require administrator rights or a restart. Review the How to fix guide first.",
+            icon="warning",
+            parent=self,
+        )
+        if not confirmed:
+            return
         # Run fix in a thread to prevent freezing the GUI
         threading.Thread(
             target=self._run_local_fix, args=(cmd_key,), daemon=True

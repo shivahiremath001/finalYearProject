@@ -75,8 +75,8 @@
 R3P fills this critical defense gap by introducing continuous posture profiling:
 
 1. **Lightweight Windows Agent (`collector.py`):** Runs asynchronously on endpoints to collect **23+ low-level Windows security configuration data points** via WMI, PowerShell, Win32 APIs, and registry state queries.
-2. **Active Behavioral Validation:** Executes non-destructive mock attack simulations (e.g., VSS shadow copy reconnaissance and rapid mass-file renaming) to verify whether local EDR or security controls actively detect and block ransomware-like activity.
-3. **Context-Aware Mathematical Scoring Engine (`scoring.py`):** Translates raw telemetry into a normalized **0–100 Risk Score** using multi-variable weighting (Severity Weight $\times$ Exploitation Likelihood $\times$ Asset Criticality Multiplier) with a hard-coded critical escalation failsafe.
+2. **Active Behavioral Validation:** Executes non-destructive probes (a read-only VSS inventory query and temporary-file renames). They report whether those exact actions were blocked; they do not prove that real ransomware encryption or VSS deletion would be blocked.
+3. **Context-Aware Mathematical Scoring Engine (`scoring.py`):** Translates raw telemetry into an effective **0–100 Risk Score** using multi-variable weighting (Severity Weight $\times$ Exploitation Likelihood $\times$ Asset Criticality Multiplier), plus documented severity and active-test escalation rules.
 4. **Statistical Anomaly Detection (`anomaly.py`):** Implements a **Rolling Z-Score algorithm** across historical scans to detect Posture Drift—flagging sudden security degradations or unauthorized modifications in real time.
 5. **Allowlisted Remediation Engine (`remediation_registry.py`):** Admin-confirmed remote actions send only pre-approved string identifiers (`command_key`), which the agent checks against its local allowlist. After execution, the agent runs a fresh scan to verify observed configuration.
 6. **Real-Time Admin Dashboard:** A React 18 single-page application communicating with a FastAPI backend through HTTP REST and WebSocket feeds.
@@ -108,10 +108,10 @@ Ransomware accounts for over **$57 billion in global damages annually** (Cyberse
 
 ### In-Scope Capabilities
 - ✅ **Continuous Telemetry Collection:** Automated, 60-second non-blocking background collection of 23+ security parameters on Windows 10/11 and Windows Server endpoints.
-- ✅ **Active Behavioral Mock Attacks:** Safe, non-destructive execution of VSS enumeration checks and rapid temporary file-renaming triggers.
+- ✅ **Active Behavioral Probes:** Non-destructive read-only VSS enumeration and temporary-file renaming probes; results describe only whether those exact actions were allowed.
 - ✅ **Normalized Risk Scoring:** Multi-variable mathematical formulation normalizing risk to a 0.0–100.0 scale.
 - ✅ **Contextual Asset Weighting:** Dynamic weight adjustment based on machine role (`Workstation` 1.0x, `Server` 1.3x, `Domain Controller` 1.6x).
-- ✅ **Failsafe Severity Escalation:** Automatic override to `HIGH RISK` or `CRITICAL` upon detecting any single Weight 5 parameter failure.
+- ✅ **Failsafe Severity Escalation:** Any single Weight 5 parameter failure raises the classification to at least `HIGH RISK`; a successful mock attack sets the effective numeric score to at least `75/100` and classifies the endpoint as `CRITICAL`.
 - ✅ **Statistical Anomaly Detection:** Rolling Z-score computation over a sliding window ($N=10$) flagging posture drift ($|z| > 2.0$).
 - ✅ **MITRE ATT&CK Mapping:** Explicit cross-referencing of every check against official MITRE ATT&CK Enterprise v15 technique IDs.
 - ✅ **Controlled Remediation Protocol:** Admin-confirmed remote execution of allowlisted PowerShell actions, followed by an immediate verification scan.
@@ -265,14 +265,16 @@ To eliminate UI freezing during long-running WMI queries or active attack simula
 
 Unlike passive audit tools that rely solely on reading static registry keys (which can be faked or hooked by malware), R3P introduces **Active Validation (Mock Attacks)**. These tests evaluate the operational responsiveness of endpoint security controls in real time.
 
-1. **VSS Enumeration Mock Test (`mock_attack_vss_enum_succeeded`):**
-   - *Mechanism:* The agent executes a non-destructive query against the Volume Shadow Copy service via `vssadmin list shadows` or WMI `Win32_ShadowCopy`.
+1. **VSS Enumeration Probe (`mock_attack_vss_enum_succeeded`):**
+   - *Mechanism:* The agent issues a read-only PowerShell/WMI query for `Win32_ShadowCopy` instances.
    - *Threat Simulation:* Ransomware actors always conduct VSS reconnaissance (MITRE T1490) prior to deletion to ensure recovery backups exist.
-   - *Evaluation:* If the query executes unhindered without being intercepted or restricted by operational EDR/Defender policies, the mock attack succeeds—meaning the system failed to restrict shadow copy discovery, triggering a security flag.
-2. **Mass File Rename Mock Test (`mock_attack_mass_rename_succeeded`):**
-   - *Mechanism:* The agent drops 100 small dummy `.tmp` files into a isolated sandbox directory within `%TEMP%\r3p_mock_test\`. It then attempts to rapidly rename all 100 files to `.locked` within a 500-millisecond execution window.
-   - *Threat Simulation:* Emulates the high-speed file system IO and extensions swapping characteristic of active ransomware encryption engines (MITRE T1486).
-   - *Evaluation:* If all 100 renames complete without automated ransomware protection (such as Controlled Folder Access or EDR behavioral blocking) stepping in to terminate the process or lock the folder, the mock attack succeeds—proving the endpoint lacks behavioral ransomware detection.
+   - *Evaluation:* If the read-only query returns successfully, this probe is recorded as allowed and contributes risk. If it does not complete, that may be due to a command or environment error rather than an EDR block. Windows commonly permits inventory queries; this alone does not establish that shadow-copy deletion would be allowed.
+2. **Temporary File Rename Probe (`mock_attack_mass_rename_succeeded`):**
+   - *Mechanism:* The agent creates 100 disposable `.txt` files in `%TEMP%\r3p_mock_attack\` and asks PowerShell to rename each with a `.locked` suffix, then checks how many renames completed.
+   - *Threat Simulation:* A narrow file-operation behavior probe inspired by ransomware file impact (MITRE T1486); it does not encrypt files or prove that real encryption would be blocked.
+   - *Evaluation:* If all 100 temporary-file renames complete, this probe is recorded as allowed and contributes risk. An incomplete run may be due to a command or environment error rather than an EDR block. The result does not prove that encryption would evade protection: the test uses disposable files in the agent's temporary directory, which may not be protected by Controlled Folder Access or a product's behavioral rules.
+
+**Demo preparation:** Use a disposable Windows 10/11 VM, keep the intended Defender/EDR policy enabled, run the collector elevated, and take a VM snapshot before testing. Default Windows policy may allow these benign probes. Do not weaken protections, add exclusions, or claim a simulated result is live enforcement. For predictable configuration/remediation walkthroughs, use `python demo_collector.py` to populate clearly simulated fleet data, and use the resettable VM when demonstrating actual changes.
 
 ### Local Remediation Allowlist Execution
 
@@ -376,7 +378,7 @@ Every telemetry parameter monitored by R3P maps directly to a specific Windows c
 | 24 | `backup_absent` | Boolean | Windows Backup Service status | No active system backups configured. |
 | 25 | `bitlocker_off` | Boolean | `Get-BitLockerVolume` protection status | Disks unencrypted allowing offline data theft. |
 | 26 | `mock_attack_vss_enum_succeeded` | Boolean | Active behavior test (VSS Query) | Endpoint security failed to block VSS enumeration. |
-| 27 | `mock_attack_mass_rename_succeeded` | Boolean | Active behavior test (Rapid Rename) | EDR failed to stop rapid batch file renaming. |
+| 27 | `mock_attack_mass_rename_succeeded` | Boolean | Active behavior test (Rapid Rename) | The specific temporary-file rename probe was allowed; this does not establish whether encryption of protected data would be blocked. |
 
 ---
 
@@ -457,8 +459,14 @@ $$\text{Risk}_{raw} = \sum_{i=1}^{n} \left[ f(p_i) \cdot S(p_i) \cdot L(p_i) \cd
 The **Maximum Possible Theoretical Risk** ($\text{Risk}_{max}$) is computed assuming a standard baseline workstation ($C_{asset}=1.0$) failing every single check:
 $$\text{Risk}_{max} = \sum_{i=1}^{n} \left[ 1 \cdot S(p_i) \cdot L(p_i) \cdot 1.0 \right]$$
 
-The **Final Normalized Risk Score** ($R$) is:
-$$R = \min \left( 100.0, \left( \frac{\text{Risk}_{raw}}{\text{Risk}_{max}} \right) \times 100 \right)$$
+The **Base Normalized Risk Score** ($R_{base}$) is:
+$$R_{base} = \min \left( 100.0, \left( \frac{\text{Risk}_{raw}}{\text{Risk}_{max}} \right) \times 100 \right)$$
+
+The effective score shown in the fleet and endpoint views applies the active-validation floor:
+
+$$R_{effective} = \begin{cases} \max(R_{base}, 75.0) & \text{if either mock attack succeeds} \\ R_{base} & \text{otherwise} \end{cases}$$
+
+Thus a successful mock attack is shown as at least `75/100` and `CRITICAL`, avoiding a low numeric score paired with a critical label. Per-parameter contributions continue to explain the base weighted findings.
 
 ### Severity, Likelihood, & Asset Criticality Weights
 
@@ -528,7 +536,7 @@ Represents the empirical frequency of occurrence across documented real-world ra
 | Telemetry Parameter | $S(p_i)$ | $L(p_i)$ | Combined Risk Factor ($S \times L$) | Primary Threat Intelligence Citation | Real-World Attack Chain Rationale |
 |---|:---:|:---:|:---:|---|---|
 | **`vss_deleted`** | **5.0** | **1.0** | **5.00** | CISA Advisory AA23-075A (LockBit 3.0); FBI Flash Reports | **Recovery Prevention:** 90%+ of ransomware strains (LockBit, BlackCat, Akira, WannaCry) execute `vssadmin delete shadows /all /quiet` prior to encryption to destroy local system restore capability. |
-| **`mock_attack_vss_enum_succeeded`** | **5.0** | **1.0** | **5.00** | MITRE ATT&CK T1490; Sophos Incident Audit | **Active Validation Defect:** Indicates EDR/AV completely failed to block active shadow copy reconnaissance. If this fails, ransomware will successfully execute VSS deletion. |
+| **`mock_attack_vss_enum_succeeded`** | **5.0** | **1.0** | **5.00** | MITRE ATT&CK T1490; Sophos Incident Audit | **Active Validation Signal:** The read-only VSS inventory query was allowed. This does not show whether shadow-copy deletion would be permitted. |
 | **`mock_attack_mass_rename_succeeded`** | **5.0** | **1.0** | **5.00** | MITRE ATT&CK T1486; Microsoft MDDR | **Active Validation Defect:** Indicates behavioral anti-ransomware shield failed to intercept rapid file renaming batch operations (the final encryption execution phase). |
 | **`lsass_protection_off`** | **5.0** | **0.9** | **4.50** | Verizon DBIR §3.2 (Credential Access); MITRE T1003.001 | **Credential Theft:** LSASS without `RunAsPPL` enables Mimikatz and LSASS memory dumping, allowing attackers to harvest plaintext domain admin credentials for fleet-wide compromise. |
 | **`vulnerable_driver_blocklist_enabled`** | **5.0** | **0.9** | **4.50** | CISA Alert AA22-321A (Hive Ransomware); ESET BYOVD Report | **BYOVD (Bring Your Own Vulnerable Driver):** Attackers drop signed legacy drivers (e.g., `gdrv.sys`) to disable EDR processes from kernel mode. Blocklist missing = total EDR bypass. |
@@ -564,10 +572,10 @@ A mathematical limitation of weighted averages is that a machine could pass 26 m
 To eliminate false negatives, R3P applies a **Critical Escalation Rule**:
 
 $$\text{Category} = \begin{cases} 
-\text{CRITICAL} & \text{if } R \ge 75.0 \text{ or any mock attack failed} \\
-\text{HIGH RISK} & \text{if } (50.0 \le R < 75.0) \text{ OR } \exists p_i \text{ s.t. } f(p_i)=1 \land S(p_i)=5.0 \\
-\text{LOW RISK} & \text{if } 25.0 \le R < 50.0 \\
-\text{SAFE} & \text{if } R < 25.0 \text{ AND } \forall p_i, S(p_i) < 5.0
+\text{CRITICAL} & \text{if } R_{effective} \ge 75.0 \\
+\text{HIGH RISK} & \text{if } (50.0 \le R_{effective} < 75.0) \text{ OR } \exists p_i \text{ s.t. } f(p_i)=1 \land S(p_i)=5.0 \\
+\text{LOW RISK} & \text{if } 25.0 \le R_{effective} < 50.0 \\
+\text{SAFE} & \text{if } R_{effective} < 25.0 \text{ AND } \forall p_i, S(p_i) < 5.0
 \end{cases}$$
 
 ### Step-by-Step Mathematical Calculation Example
@@ -893,7 +901,7 @@ pytest backend/tests/ -v
 ## Comprehensive Presentation Q&A / Viva Preparation
 
 ### Q1: What makes R3P different from vulnerability scanners like Nessus or Qualys?
-> **Answer:** "Nessus and Qualys focus primarily on software CVEs (missing patches, outdated software versions). R3P focuses on **misconfiguration risk posture** and **active behavioral resilience**. Over 80% of ransomware breaches exploit active misconfigurations—such as open RDP, unrestricted PowerShell, missing LSASS protection, or deleted shadow copies—on fully patched systems. Furthermore, R3P conducts active mock attack simulations (like VSS enumeration and rapid file renaming) to verify if endpoint security controls block real ransomware techniques."
+> **Answer:** "Nessus and Qualys focus primarily on software CVEs (missing patches, outdated software versions). R3P focuses on **misconfiguration risk posture** and **active behavioral probes**. Its safe probes check whether a read-only VSS inventory query or renames of disposable temporary files are allowed. They help explain one narrow endpoint behavior; they do not verify whether real ransomware deletion or encryption would be blocked."
 
 ### Q2: Why did you choose Rolling Z-Score over machine learning models like Isolation Forest or Neural Networks?
 > **Answer:** "Our anomaly signal is univariate—a single scalar risk score (0–100) computed over time for each endpoint. Rolling Z-score is the mathematically standard, time-tested approach for univariate anomaly detection. It requires zero training data cold-start, operates from scan #3 onwards, executes in $O(N)$ time, and is 100% explainable. Neural networks for a 1D scalar signal represent unnecessary over-engineering that introduces black-box opacity without improving detection accuracy."
@@ -1115,3 +1123,16 @@ The frontend maintains a continuous bidirectional WebSocket connection to `/ws/l
   - **Remediation Confirmations:** Success toasts when commands transition from `PENDING` to `COMPLETED` on remote endpoints.
   - **Connection State Alerts:** Alerts informing operators if the telemetry socket enters reconnect backoff.
 - **Resilient Reconnection Loop:** Automatic exponential backoff reconnection protocol maintaining SecOps situational awareness even across transient network interruptions.
+
+### Windows agent: in-app remediation guidance
+
+The Tkinter endpoint agent exposes a **Fix guide** directory in its header and a **How to fix** action beside each reported finding. The directory is available before a finding appears; finding-specific actions lead to the corresponding entry. Guidance is keyed to the agent's parameter identifiers and includes the risk context, manual remediation, verification, and operational cautions. Opening the guide is read-only and cannot execute PowerShell.
+
+**Apply fix** appears only when the parameter maps to a command key, and the command key must also be present in the agent's local `AGENT_REMEDIATION` allowlist. The agent asks for confirmation before running the predefined local command. Server responses never supply executable PowerShell. Some configuration findings have no supported automated fix and require the operating system UI, central endpoint policy, or administrator workflow. Allowlisted fixes can still fail or be reverted by policy; a successful command acknowledgment is not proof that the setting is effective. The agent's follow-up scan is the verification step. Admin rights, restart requirements, compatibility review, managed-policy precedence, and remote lockout risks are called out in the individual guidance where relevant.
+
+#### What the mock checks actually do
+
+- `mock_attack_vss_enum_succeeded`: runs a read-only WMI query to enumerate `Win32_ShadowCopy`. It does not issue a delete command. If the query is allowed, that alone does not prove an attacker could delete snapshots or bypass backup protections.
+- `mock_attack_mass_rename_succeeded`: creates disposable files in `%TEMP%\r3p_mock_attack`, attempts to rename them with a `.locked` suffix, then removes the temporary directory. It does not encrypt user documents or test writes to protected business folders.
+
+These probes indicate only whether these limited actions completed or were interrupted. They are not a full ransomware efficacy test. A general Defender setting or Controlled Folder Access is not guaranteed to block either specific probe (the rename probe uses a temporary directory, which may not be a protected folder). Review EDR/Defender telemetry and validate controls using vendor-supported procedures in an isolated, resettable lab. Do not disable WMI or backup services, weaken endpoint protection, or add broad exclusions to force a blocked result. Changes to protection policies should be checked against application compatibility and centrally managed policy.
