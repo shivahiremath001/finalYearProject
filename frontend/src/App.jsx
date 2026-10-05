@@ -12,6 +12,7 @@ import RemediationView from './views/RemediationView'
 import AnalyticsView from './views/AnalyticsView'
 import NetworkMapView from './views/NetworkMapView'
 import AboutView from './views/AboutView'
+import ManualFixGuide from './components/ManualFixGuide'
 
 import {
   API_BASE,
@@ -544,23 +545,7 @@ function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy 
                                 <div className="issue-expanded">
                                   {policy && <p className="issue-desc" style={{ color: 'var(--low)', marginBottom: 8 }}>An active policy exception is registered for this risky parameter. It remains visible as a finding; the exception documents an approved deviation.</p>}
                                   <span className="issue-desc">{PARAM_DESCRIPTIONS[param] || ''}</span>
-                                  {(!fixCmd || MANUAL_FIX_GUIDES[param]) && (
-                                    <div className="fix-area">
-                                      <div style={{ marginTop: 12, padding: 14, borderRadius: 10, background: 'var(--overlay)', border: '1px solid var(--border2)' }}>
-                                        <strong style={{ display: 'block', color: 'var(--text)', marginBottom: 8 }}>How to fix this risk manually</strong>
-                                        {MANUAL_FIX_GUIDES[param] ? (
-                                          <>
-                                            <ol style={{ margin: '0 0 12px', paddingLeft: 20, color: 'var(--subtle)', fontSize: 13, lineHeight: 1.65 }}>
-                                              {MANUAL_FIX_GUIDES[param].steps.map((step, i) => <li key={i} style={{ marginBottom: 6 }}>{step}</li>)}
-                                            </ol>
-                                            <p style={{ margin: 0, color: 'var(--subtle)', fontSize: 13, lineHeight: 1.6 }}><strong style={{ color: 'var(--text)' }}>Verify:</strong> {MANUAL_FIX_GUIDES[param].verify}</p>
-                                          </>
-                                        ) : (
-                                          <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>This check has no approved remote command. Remediate it locally using your organization’s security policy, then run a new scan to confirm the result.</p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
+                                  <ManualFixGuide param={param} guide={MANUAL_FIX_GUIDES[param]} />
                                   {mitre && (
                                     <div className="mitre-detail">
                                       <span className="mitre-label">MITRE ATT&CK:</span>
@@ -573,7 +558,7 @@ function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy 
                             </div>
                           </div>
                           <div className="issue-right" onClick={e => e.stopPropagation()}>
-                            {fixCmd ? (
+                            {fixCmd && (
                               st === 'queued' ? (
                                 <span className="fix-queued">⏳ Fix Queued</span>
                               ) : st === 'sending' ? (
@@ -584,33 +569,20 @@ function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy 
                                   className="btn btn-fix"
                                   onClick={() => handleFixClick(param)}
                                 >
-                                  <Zap size={14} style={{verticalAlign: 'text-bottom'}} /> Fix
+                                  <Zap size={14} style={{verticalAlign: 'text-bottom'}} /> Quick Fix
                                 </button>
                               )
-                            ) : (
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                aria-expanded={Boolean(isExpanded)}
-                                onClick={() => toggleExpand(param)}
-                                title={`Show manual fix instructions for ${PARAM_LABELS[param] || param}`}
-                                style={{ color: 'var(--primary)', whiteSpace: 'nowrap' }}
-                              >
-                                {isExpanded ? 'Hide instructions' : 'How to fix'}
-                              </button>
                             )}
-                            {fixCmd && MANUAL_FIX_GUIDES[param] && (
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                aria-expanded={Boolean(isExpanded)}
-                                onClick={() => toggleExpand(param)}
-                                title={`Show manual guidance for ${PARAM_LABELS[param] || param}`}
-                                style={{ color: 'var(--subtle)', whiteSpace: 'nowrap', marginTop: 6 }}
-                              >
-                                Manual steps
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              aria-expanded={Boolean(isExpanded)}
+                              onClick={() => toggleExpand(param)}
+                              title={`Show manual fix guide for ${PARAM_LABELS[param] || param}`}
+                              style={{ color: isExpanded ? 'var(--subtle)' : 'var(--primary)', whiteSpace: 'nowrap', marginTop: fixCmd ? 6 : 0 }}
+                            >
+                              {isExpanded ? 'Hide guide' : 'Manual fix guide'}
+                            </button>
                           </div>
                         </div>
                       )

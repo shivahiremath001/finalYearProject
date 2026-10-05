@@ -146,54 +146,696 @@ export const PARAM_EXTENDED_INFO = {
 }
 
 export const MANUAL_FIX_GUIDES = {
-  rdp_enabled: {
-    steps: ['If Remote Desktop is required, do not disable it outright. Require Network Level Authentication, enforce MFA through an approved gateway, and restrict inbound access to a VPN or trusted management network.', 'If RDP is not required, coordinate an approved maintenance window and confirm you have another way to administer the device before disabling Remote Desktop in Settings → System → Remote Desktop or through managed Group Policy.', 'Review Windows Defender Firewall Remote Desktop rules and allow access only from approved management networks.'],
-    verify: 'From an approved management host, confirm the intended RDP access works—or, if disabled, confirm port 3389 is no longer reachable and an alternate management path remains available.'
+  "smb_v1_enabled": {
+    summary: "Disable SMBv1 network file sharing protocol to block remote code execution vulnerabilities like EternalBlue/WannaCry.",
+    steps: ["Open Settings (Win + I) and navigate to Apps > Optional features.", "Scroll to the bottom and click 'More Windows features'.", "In the Windows Features dialog, locate 'SMB 1.0/CIFS File Sharing Support' and uncheck the entire box.", "Click OK, wait for Windows to remove the feature files, and click 'Restart now' when prompted."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) and navigate to Apps > Optional features.", "Scroll to the bottom and click 'More Windows features'.", "In the Windows Features dialog, locate 'SMB 1.0/CIFS File Sharing Support' and uncheck the entire box.", "Click OK, wait for Windows to remove the feature files, and click 'Restart now' when prompted."],
+        cli: "Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Press Win + R, type 'optionalfeatures.exe' and press Enter.", "Scroll down to locate 'SMB 1.0/CIFS File Sharing Support'.", "Uncheck 'SMB 1.0/CIFS File Sharing Support' (including client and server sub-items).", "Click OK and restart the computer when prompted."],
+        cli: "Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open Server Manager > Manage > Remove Roles and Features.", "Click Next until reaching the 'Features' screen.", "Expand 'SMB 1.0/CIFS File Sharing Support' and uncheck it.", "Click Next and then Remove. Restart the server during an approved maintenance window."],
+        cli: "Remove-WindowsFeature FS-SMB1; Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force"
+      },
+    },
+    verify: "Run '(Get-SmbServerConfiguration).EnableSMB1Protocol' in elevated PowerShell. It must return 'False'.",
+    caution: "Legacy network copiers or ancient NAS devices from before 2010 may require firmware upgrades to support modern SMBv2 or SMBv3."
   },
-  tamper_protection_off: {
-    steps: ['On an unmanaged endpoint, open Windows Security → Virus & threat protection → Manage settings and turn on Tamper Protection.', 'For managed devices, configure Tamper Protection through Microsoft Defender for Endpoint or the organization’s Intune security policy. Centrally managed settings may override local changes.', 'Check that Defender real-time protection and other required protections are also enabled; Tamper Protection alone does not replace them.'],
-    verify: 'Check Windows Security or the Defender management console after policy sync and confirm Tamper Protection is On. Run a new R3P scan.'
+  "rdp_enabled": {
+    summary: "Close or restrict exposed Remote Desktop Protocol (port 3389) to prevent automated brute-force and credential stuffing attacks.",
+    steps: ["Open Settings (Win + I) and select System > Remote Desktop.", "Toggle the 'Remote Desktop' switch to OFF.", "Click Confirm when asked to disable Remote Desktop."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) and select System > Remote Desktop.", "Toggle the 'Remote Desktop' switch to OFF.", "Click Confirm when asked to disable Remote Desktop."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) and select System > Remote Desktop.", "Toggle 'Enable Remote Desktop' to OFF.", "Click Confirm in the confirmation dialog."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open Server Manager > Local Server.", "Click 'Enabled' next to Remote Desktop to open System Properties.", "Select 'Don't allow remote connections to this computer' and click OK (or run 'sconfig' and choose Option 7 > D)."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+      },
+    },
+    verify: "Run 'Test-NetConnection -ComputerName 127.0.0.1 -Port 3389' in PowerShell. 'TcpTestSucceeded' must be False.",
+    caution: "Disabling RDP immediately drops active remote sessions. Only execute if you have physical or out-of-band console access. If RDP is needed, place it behind a VPN and require NLA."
   },
-  open_network_shares: {
-    steps: ['On the endpoint, open Computer Management → System Tools → Shared Folders → Shares.', 'For each business-required share, open Properties → Share Permissions and remove Everyone or broad groups; grant only the users/groups that need access. Check the Security tab too, because both share and NTFS permissions apply.', 'If a share is not needed, stop sharing it from the Shares view. Do not remove administrative shares without checking remote-management dependencies.'],
-    verify: 'From an elevated PowerShell prompt, review shares with Get-SmbShare and access with Get-SmbShareAccess -Name <ShareName>. Confirm only approved identities have access.'
+  "autorun_enabled": {
+    summary: "Disable USB AutoRun and AutoPlay so connected removable drives cannot automatically execute rogue binaries.",
+    steps: ["Open Settings (Win + I) and navigate to Bluetooth & devices > AutoPlay.", "Toggle 'Use AutoPlay for all media and devices' to OFF.", "Set Removable drive and Memory card default actions to 'Take no action'."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) and navigate to Bluetooth & devices > AutoPlay.", "Toggle 'Use AutoPlay for all media and devices' to OFF.", "Set Removable drive and Memory card default actions to 'Take no action'."],
+        cli: "$path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'; if (!(Test-Path $path)) { New-Item -Path $path -Force }; Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) and navigate to Devices > AutoPlay.", "Toggle 'Use AutoPlay for all media and devices' to OFF.", "Set dropdowns for removable drives to 'Take no action'."],
+        cli: "$path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'; if (!(Test-Path $path)) { New-Item -Path $path -Force }; Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Press Win + R, type 'gpedit.msc' and press Enter.", "Navigate to Computer Configuration > Administrative Templates > Windows Components > AutoPlay Policies.", "Double-click 'Turn off AutoPlay', select 'Enabled', choose 'All drives', and click OK."],
+        cli: "$path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'; if (!(Test-Path $path)) { New-Item -Path $path -Force }; Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord"
+      },
+    },
+    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer -Name NoDriveTypeAutoRun'. It should return '255'.",
+    caution: "This disables automatic launching; users can still manually open files in File Explorer."
   },
-  macro_execution_enabled: {
-    steps: ['In Microsoft 365 Apps, open File → Options → Trust Center → Trust Center Settings → Macro Settings.', 'Choose Disable VBA macros with notification, or the stricter setting required by your organization. Prefer centrally managed Office policy for fleet-wide enforcement.', 'If signed macros are required, publish an approved signing certificate and allow only trusted, signed macros; avoid broadly trusted folders.'],
-    verify: 'Open the Trust Center Macro Settings page and confirm the enforced setting. If managed by policy, check the effective Office policy with your administrator.'
+  "open_network_shares": {
+    summary: "Restrict network shares granting access to 'Everyone' to prevent ransomware from encrypting departmental shared folders.",
+    steps: ["Press Win + R, type 'compmgmt.msc' and press Enter.", "Navigate to System Tools > Shared Folders > Shares.", "Right-click the exposed share > Properties > Share Permissions tab.", "Select 'Everyone' and click Remove. Click Add to specify only authorized users or domain security groups with Least Privilege."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Press Win + R, type 'compmgmt.msc' and press Enter.", "Navigate to System Tools > Shared Folders > Shares.", "Right-click the exposed share > Properties > Share Permissions tab.", "Select 'Everyone' and click Remove. Click Add to specify only authorized users or domain security groups with Least Privilege."],
+        cli: "Revoke-SmbShareAccess -Name '<ShareName>' -AccountName 'Everyone' -Force"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Press Win + R, type 'fsmgmt.msc' or 'compmgmt.msc' and press Enter.", "Select Shares, right-click the open share, and choose Properties.", "Under the Share Permissions tab, remove 'Everyone' and grant permissions only to authorized user accounts.", "Check the Security (NTFS) tab to ensure underlying folder permissions match."],
+        cli: "Revoke-SmbShareAccess -Name '<ShareName>' -AccountName 'Everyone' -Force"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open Server Manager > File and Storage Services > Shares.", "Right-click the share > Properties > Permissions tab.", "Click Customize permissions, select 'Everyone', and click Remove. Add authorized Active Directory security groups."],
+        cli: "Revoke-SmbShareAccess -Name '<ShareName>' -AccountName 'Everyone' -Force"
+      },
+    },
+    verify: "Run 'Get-SmbShareAccess -Name <ShareName>' in PowerShell. Confirm 'Everyone' is absent from the access control list.",
+    caution: "Review NTFS security permissions alongside share permissions. Ensure legitimate applications and employees retain necessary access."
   },
-  applocker_absent: {
-    steps: ['On a supported Windows edition, open secpol.msc → Application Control Policies → AppLocker.', 'Create the default rules for Executable Rules first so Windows system files and administrators remain usable. Add publisher/path rules for required applications.', 'Set the rule collections to Audit only, review the AppLocker event log for blocked-use candidates, then change to Enforce rules after validating business applications. Deploy via Group Policy for managed fleets.'],
-    verify: 'Review Applications and Services Logs → Microsoft → Windows → AppLocker and confirm the relevant rule collections are enforced. Test a known approved and unapproved application.'
+  "macro_execution_enabled": {
+    summary: "Block unprompted execution of Microsoft Office VBA macros to eliminate a primary malware and ransomware downloader vector.",
+    steps: ["Open Microsoft Word or Excel, then click File > Options.", "Click Trust Center > Trust Center Settings > Macro Settings.", "Select 'Disable VBA macros with notification' (or 'Disable all macros without notification').", "Check 'Enable macros in digitally signed documents' if your organization signs internal scripts, then click OK."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Microsoft Word or Excel, then click File > Options.", "Click Trust Center > Trust Center Settings > Macro Settings.", "Select 'Disable VBA macros with notification' (or 'Disable all macros without notification').", "Check 'Enable macros in digitally signed documents' if your organization signs internal scripts, then click OK."],
+        cli: "Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Word\Security' -Name 'VBAWarnings' -Value 4 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security' -Name 'VBAWarnings' -Value 4 -Type DWord"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Word or Excel > File > Options.", "Navigate to Trust Center > Trust Center Settings > Macro Settings.", "Select 'Disable VBA macros with notification'.", "Click OK to save changes."],
+        cli: "Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Word\Security' -Name 'VBAWarnings' -Value 4 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security' -Name 'VBAWarnings' -Value 4 -Type DWord"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["For RDS/Terminal servers, open 'gpedit.msc' or Domain Group Policy.", "Navigate to User Configuration > Administrative Templates > Microsoft Office > Security Settings.", "Set 'VBA Macro Notification Settings' to Enabled and choose 'Disable all with notification'."],
+        cli: "Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Word\Security' -Name 'VBAWarnings' -Value 4 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security' -Name 'VBAWarnings' -Value 4 -Type DWord"
+      },
+    },
+    verify: "Open Word/Excel > File > Options > Trust Center > Macro Settings. Verify 'Disable VBA macros with notification' is selected.",
+    caution: "If accounting or reporting processes use internal macros, sign them with an internal code-signing certificate rather than allowing unsigned macros."
   },
-  admin_shares_enabled: {
-    steps: ['First confirm that management, backup, and deployment tools do not depend on C$, ADMIN$, or other administrative shares.', 'Prefer restricting inbound SMB (TCP 445) to approved management hosts using Windows Defender Firewall or network controls.', 'If the organization explicitly requires disabling automatic administrative shares, deploy the appropriate AutoShareWks (client) or AutoShareServer (server) DWORD value under HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters, set to 0, through managed policy, then restart the Server service or reboot in a maintenance window.'],
-    verify: 'Run Get-SmbShare and confirm the intended shares are absent or access is restricted. Verify approved remote administration and backup still work.'
+  "powershell_unrestricted": {
+    summary: "Enforce RemoteSigned execution policy to prevent unapproved external PowerShell scripts from running automatically.",
+    steps: ["Right-click the Start button and choose 'Terminal (Admin)' or 'PowerShell (Admin)'.", "Execute: Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force", "Type 'Y' if prompted for confirmation."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Right-click the Start button and choose 'Terminal (Admin)' or 'PowerShell (Admin)'.", "Execute: Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force", "Type 'Y' if prompted for confirmation."],
+        cli: "Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Click Start, type 'PowerShell', right-click 'Windows PowerShell' and select 'Run as Administrator'.", "Execute: Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force", "Confirm the prompt."],
+        cli: "Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open 'gpedit.msc' > Computer Configuration > Administrative Templates > Windows Components > Windows PowerShell.", "Double-click 'Turn on Script Execution', set to Enabled, and choose 'Allow only signed scripts' or 'Allow local scripts and remote signed scripts'.", "Click OK and run 'gpupdate /force'."],
+        cli: "Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force"
+      },
+    },
+    verify: "Run 'Get-ExecutionPolicy -List' in PowerShell. Confirm 'LocalMachine' is set to 'RemoteSigned' or 'Restricted'.",
+    caution: "Execution policy is a safety guardrail, not an impenetrable security barrier. For comprehensive application control, deploy AppLocker or WDAC."
   },
-  vss_deleted: {
-    steps: ['Open System Protection (run systempropertiesprotection.exe), select the system volume, choose Configure, and enable protection.', 'Set an appropriate maximum disk usage and create a restore point. For servers, configure an organization-approved backup/snapshot plan as well.', 'Previously deleted shadow copies cannot be recovered by re-enabling the service; establish new restore points and verify independent backups.'],
-    verify: 'Run vssadmin list shadows and confirm current snapshots exist. Perform a controlled restore test according to your recovery procedure.'
+  "uac_disabled": {
+    summary: "Enable User Account Control (UAC) to stop malicious processes from silently escalating to SYSTEM privileges without administrator consent.",
+    steps: ["Press Win + R, type 'UserAccountControlSettings.exe' and press Enter.", "Move the slider to the default position ('Notify me only when apps try to make changes') or to the top ('Always notify').", "Click OK, confirm the UAC prompt, and restart the computer."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Press Win + R, type 'UserAccountControlSettings.exe' and press Enter.", "Move the slider to the default position ('Notify me only when apps try to make changes') or to the top ('Always notify').", "Click OK, confirm the UAC prompt, and restart the computer."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableLUA' -Value 1 -Type DWord"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Press Win + R, type 'UserAccountControlSettings.exe' and press Enter.", "Move the slider up to the recommended level (second from top) or top level.", "Click OK and restart the system when prompted."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableLUA' -Value 1 -Type DWord"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open 'secpol.msc' > Local Policies > Security Options.", "Locate 'User Account Control: Run all administrators in Admin Approval Mode'.", "Set it to Enabled, click OK, and schedule a system reboot."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableLUA' -Value 1 -Type DWord"
+      },
+    },
+    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -Name EnableLUA'. It must return '1'.",
+    caution: "A system restart is required for User Account Control to take full effect across all processes."
   },
-  backup_absent: {
-    steps: ['Choose the organization-approved backup product or Windows Server Backup for supported server workloads.', 'Configure scheduled backups for required data and system state. Keep at least one copy isolated or immutable and restrict deletion rights from endpoint administrator accounts.', 'Document retention, encryption, and recovery ownership; do not count a configured job as protection until it has completed successfully.'],
-    verify: 'Check the backup console for recent successful jobs, then perform a test restore to a safe location and record the result.'
+  "applocker_absent": {
+    summary: "Configure AppLocker application control policies to ensure only verified, authorized executables can launch on the endpoint.",
+    steps: ["Press Win + R, type 'secpol.msc' and press Enter.", "Navigate to Application Control Policies > AppLocker.", "Click 'Configure rule enforcement' and check 'Configured' under Executable rules (start with 'Audit only').", "Right-click Executable Rules > 'Create Default Rules' to ensure Windows and Program Files remain accessible.", "Start the Application Identity service: Win + R > services.msc > Application Identity > Set to Automatic and Start."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Press Win + R, type 'secpol.msc' and press Enter.", "Navigate to Application Control Policies > AppLocker.", "Click 'Configure rule enforcement' and check 'Configured' under Executable rules (start with 'Audit only').", "Right-click Executable Rules > 'Create Default Rules' to ensure Windows and Program Files remain accessible.", "Start the Application Identity service: Win + R > services.msc > Application Identity > Set to Automatic and Start."],
+        cli: "Set-Service -Name AppIDSvc -StartupType Automatic; Start-Service AppIDSvc"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Press Win + R, type 'secpol.msc' and navigate to Application Control Policies > AppLocker.", "Right-click Executable Rules > Create Default Rules.", "Enable rule enforcement in Audit mode first.", "Ensure the Application Identity service is started and set to Automatic."],
+        cli: "Set-Service -Name AppIDSvc -StartupType Automatic; Start-Service AppIDSvc"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Server Manager > Tools > Local Security Policy (or Group Policy Management for fleet).", "Navigate to Application Control Policies > AppLocker.", "Create Default Rules under Executable Rules and Packaged App Rules.", "Set Application Identity service to Automatic and start it."],
+        cli: "Set-Service -Name AppIDSvc -StartupType Automatic; Start-Service AppIDSvc"
+      },
+    },
+    verify: "Run 'Get-Service AppIDSvc' in elevated PowerShell. Confirm Status is 'Running'. Check Event Viewer > Applications and Services Logs > Microsoft > Windows > AppLocker.",
+    caution: "CRITICAL: Always generate Default Rules (allowing %WINDIR% and %PROGRAMFILES%) before switching from Audit to Enforce mode to avoid blocking essential system binaries."
   },
-  bitlocker_off: {
-    steps: ['Before enabling encryption, confirm the device supports BitLocker and ensure its recovery key will be escrowed to Microsoft Entra ID, Active Directory, or your approved key-management system.', 'For a managed device, deploy BitLocker settings using Intune or Group Policy, including the recovery-key backup requirement and approved encryption method.', 'On an individual device, use Control Panel → System and Security → BitLocker Drive Encryption → Turn on BitLocker, then follow the organization’s key-protection policy. Do not start encryption until recovery-key escrow is confirmed.'],
-    verify: 'Run manage-bde -status C: and confirm Protection Status is Protection On. Confirm the recovery key is retrievable from the approved directory.'
+  "defender_disabled": {
+    summary: "Enable Windows Defender real-time antivirus protection to detect and quarantine malware signatures and heuristic threats.",
+    steps: ["Open Settings (Win + I) > Privacy & security > Windows Security.", "Click 'Virus & threat protection', then click 'Manage settings' under Virus & threat protection settings.", "Toggle 'Real-time protection' to ON.", "Also toggle 'Cloud-delivered protection' and 'Automatic sample submission' to ON."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) > Privacy & security > Windows Security.", "Click 'Virus & threat protection', then click 'Manage settings' under Virus & threat protection settings.", "Toggle 'Real-time protection' to ON.", "Also toggle 'Cloud-delivered protection' and 'Automatic sample submission' to ON."],
+        cli: "Set-MpPreference -DisableRealtimeMonitoring $false; Start-Service WinDefend -ErrorAction SilentlyContinue"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) > Update & Security > Windows Security.", "Click 'Virus & threat protection' > 'Manage settings'.", "Toggle 'Real-time protection' to ON."],
+        cli: "Set-MpPreference -DisableRealtimeMonitoring $false; Start-Service WinDefend -ErrorAction SilentlyContinue"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open Server Manager > Local Server.", "Verify Windows Defender is installed (if not, add feature via Add Roles and Features > Windows Defender Antivirus).", "Open Windows Security from Start menu > Virus & threat protection > Turn ON Real-time protection."],
+        cli: "Set-MpPreference -DisableRealtimeMonitoring $false; Start-Service WinDefend -ErrorAction SilentlyContinue"
+      },
+    },
+    verify: "Run '(Get-MpComputerStatus).RealTimeProtectionEnabled' in PowerShell. It must return 'True'.",
+    caution: "If an authorized third-party enterprise EDR (e.g. CrowdStrike, SentinelOne) is deployed, Defender may operate in passive mode. Coordinate with your IT security team."
   },
-  laps_absent: {
-    steps: ['Select Windows LAPS and the appropriate storage target: Microsoft Entra ID or Active Directory Domain Services.', 'Deploy the required Windows updates/schema preparation, grant the managed devices permission to update their LAPS passwords, and configure policy for password length, age, and backup directory.', 'Enable Windows LAPS through Intune or Group Policy, then rotate local administrator passwords. Remove shared/static local admin passwords from operational use.'],
-    verify: 'Confirm LAPS policy is applied and a recent password backup timestamp appears in the selected directory. Test authorized retrieval using delegated access.'
+  "firewall_disabled": {
+    summary: "Enable Windows Defender Firewall across Domain, Private, and Public profiles to block unauthorized inbound connections and scanning.",
+    steps: ["Open Settings (Win + I) > Privacy & security > Windows Security > Firewall & network protection.", "Click on Domain network, Private network, and Public network.", "Toggle 'Microsoft Defender Firewall' to ON for all three profiles."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) > Privacy & security > Windows Security > Firewall & network protection.", "Click on Domain network, Private network, and Public network.", "Toggle 'Microsoft Defender Firewall' to ON for all three profiles."],
+        cli: "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) > Update & Security > Windows Security > Firewall & network protection.", "Click each profile (Domain, Private, Public) and toggle the firewall to ON."],
+        cli: "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Server Manager > Local Server > Click 'Windows Defender Firewall'.", "Click 'Turn Windows Defender Firewall on or off' in the left pane.", "Select 'Turn on Windows Defender Firewall' for all network locations and click OK."],
+        cli: "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True"
+      },
+    },
+    verify: "Run 'Get-NetFirewallProfile | Select-Object Name, Enabled' in PowerShell. All three profiles must report Enabled: True.",
+    caution: "Ensure required line-of-business services have specific inbound port allow rules before turning on the firewall to prevent connection drops."
   },
-  mock_attack_vss_enum_succeeded: {
-    steps: ['Review endpoint protection alerts and policy for the simulated Volume Shadow Copy enumeration behavior.', 'Configure the organization’s EDR/AV behavior protection to detect or block suspicious shadow-copy discovery and ransomware preparation, following the vendor’s guidance.', 'Rerun the authorized R3P validation scan after policy propagation; do not attempt to remediate by disabling legitimate backup or recovery services.'],
-    verify: 'The next R3P validation should report the simulation as blocked. Review the EDR event to confirm the expected control produced the block.'
+  "tamper_protection_off": {
+    summary: "Turn on Defender Tamper Protection to prevent ransomware and malware from manipulating registry keys or stopping antivirus services.",
+    steps: ["Open Settings (Win + I) > Privacy & security > Windows Security > Virus & threat protection.", "Under 'Virus & threat protection settings', click 'Manage settings'.", "Scroll down to 'Tamper Protection' and toggle it to ON."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) > Privacy & security > Windows Security > Virus & threat protection.", "Under 'Virus & threat protection settings', click 'Manage settings'.", "Scroll down to 'Tamper Protection' and toggle it to ON."],
+        cli: "Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) > Update & Security > Windows Security > Virus & threat protection.", "Click 'Manage settings' under Virus & threat protection settings.", "Toggle 'Tamper Protection' to ON."],
+        cli: "Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["On Windows Server 2019/2022/2025, Tamper Protection is managed centrally through Microsoft Defender for Endpoint / Intune Security Center.", "On standalone servers, enable it via elevated PowerShell using the command below."],
+        cli: "Set-MpPreference -DisableTamperProtection $false -ErrorAction SilentlyContinue"
+      },
+    },
+    verify: "Run '(Get-MpComputerStatus).IsTamperProtected' in PowerShell. It should return 'True'.",
+    caution: "On managed domain or Entra-joined machines, local UI changes may be overridden by central Group Policy or Intune profiles."
   },
-  mock_attack_mass_rename_succeeded: {
-    steps: ['Review endpoint protection alerts and policy for rapid file modification or mass-rename behavior.', 'Configure EDR/AV ransomware behavior protection and controlled-folder protections for the directories that need protection, using the vendor’s recommended policy.', 'Rerun the authorized R3P validation after policy propagation and confirm the simulation is contained without disrupting approved applications.'],
-    verify: 'The next R3P validation should report the simulation as blocked. Confirm the EDR event identifies the expected ransomware behavior control.'
-  }
+  "event_logging_disabled": {
+    summary: "Start and configure the Windows Event Log service so all logon, process execution, and security events are recorded for forensics.",
+    steps: ["Press Win + R, type 'services.msc' and press Enter.", "Scroll down to 'Windows Event Log'.", "Right-click > Properties > Set Startup type to 'Automatic'.", "Click 'Start' if the service is stopped, then click OK."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Press Win + R, type 'services.msc' and press Enter.", "Scroll down to 'Windows Event Log'.", "Right-click > Properties > Set Startup type to 'Automatic'.", "Click 'Start' if the service is stopped, then click OK."],
+        cli: "Set-Service -Name 'eventlog' -StartupType Automatic; Start-Service -Name 'eventlog'"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Press Win + R, type 'services.msc' and press Enter.", "Double-click 'Windows Event Log' in the list.", "Set Startup type to 'Automatic', click 'Start', and click OK."],
+        cli: "Set-Service -Name 'eventlog' -StartupType Automatic; Start-Service -Name 'eventlog'"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Server Manager > Tools > Services.", "Locate 'Windows Event Log', open Properties.", "Set Startup type to 'Automatic' and click 'Start'."],
+        cli: "Set-Service -Name 'eventlog' -StartupType Automatic; Start-Service -Name 'eventlog'"
+      },
+    },
+    verify: "Run 'Get-Service eventlog' in PowerShell. Status must be 'Running' and StartType must be 'Automatic'.",
+    caution: "Never clear event logs as a diagnostic step, as doing so destroys critical forensic traces during an ongoing security incident."
+  },
+  "admin_shares_enabled": {
+    summary: "Restrict or disable default administrative hidden shares (C$, ADMIN$) to prevent attackers from executing remote tools like PsExec across the subnet.",
+    steps: ["Press Win + R, type 'wf.msc' (Windows Firewall with Advanced Security) and press Enter.", "Click Inbound Rules, locate 'File and Printer Sharing (SMB-In)', and restrict the Remote IP Address scope to approved admin workstations only.", "Alternatively, disable client auto-shares via the registry command below."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Press Win + R, type 'wf.msc' (Windows Firewall with Advanced Security) and press Enter.", "Click Inbound Rules, locate 'File and Printer Sharing (SMB-In)', and restrict the Remote IP Address scope to approved admin workstations only.", "Alternatively, disable client auto-shares via the registry command below."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters' -Name 'AutoShareWks' -Value 0 -Type DWord; Restart-Service LanmanServer -Force"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Windows Defender Firewall with Advanced Security ('wf.msc').", "Scope Inbound SMB (TCP port 445) rules to management IP subnets only.", "To disable auto-shares completely on workstations, run the PowerShell command below."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters' -Name 'AutoShareWks' -Value 0 -Type DWord; Restart-Service LanmanServer -Force"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["On servers, administrative shares are commonly used by backup and deployment agents.", "Best practice is to restrict inbound SMB (Port 445) to dedicated management IPs in Windows Firewall.", "If policy requires disabling server auto-shares completely, apply the AutoShareServer registry key."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters' -Name 'AutoShareServer' -Value 0 -Type DWord; Restart-Service LanmanServer -Force"
+      },
+    },
+    verify: "Run 'Get-SmbShare' in PowerShell. Administrative shares C$ and ADMIN$ should be removed or inaccessible from unapproved hosts.",
+    caution: "Disabling admin shares may disrupt remote management software (SCCM, PDQ) or agentless backup tools. Coordinate with system administrators."
+  },
+  "lsass_protection_off": {
+    summary: "Enable LSASS Protected Process Light (RunAsPPL) to prevent memory-dumping tools like Mimikatz from stealing credentials and Kerberos tickets.",
+    steps: ["Open Settings (Win + I) > Privacy & security > Windows Security > Device security.", "Click 'Core isolation details'.", "Locate 'Local Security Authority protection' and toggle it to ON.", "Restart the computer when prompted."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) > Privacy & security > Windows Security > Device security.", "Click 'Core isolation details'.", "Locate 'Local Security Authority protection' and toggle it to ON.", "Restart the computer when prompted."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RunAsPPL' -Value 1 -Type DWord"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to 'HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa'.", "Right-click Lsa > New > DWORD (32-bit) Value, name it 'RunAsPPL' and set value to '1'.", "Restart the computer."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RunAsPPL' -Value 1 -Type DWord"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open 'gpedit.msc' (or Group Policy Management Console).", "Navigate to Computer Configuration > Administrative Templates > System > Local Security Authority.", "Open 'Configures LSASS to run as a protected process', set to Enabled, and choose 'Enabled without UEFI lock' or 'Enabled with UEFI lock'.", "Restart the server during a scheduled maintenance window."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RunAsPPL' -Value 1 -Type DWord"
+      },
+    },
+    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name RunAsPPL' in PowerShell. It should return '1' or '2'. Check Event ID 3065 in Microsoft-Windows-CodeIntegrity/Operational.",
+    caution: "Requires a system reboot. Verify that custom third-party smart card or biometric credential providers are digitally signed and compatible."
+  },
+  "guest_account_active": {
+    summary: "Disable the built-in Guest account to eliminate unauthenticated local and network logon opportunities for intruders.",
+    steps: ["Press Win + R, type 'lusrmgr.msc' and press Enter.", "Click 'Users' in the left pane.", "Right-click 'Guest' and select Properties.", "Check the box 'Account is disabled', then click OK."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Press Win + R, type 'lusrmgr.msc' and press Enter.", "Click 'Users' in the left pane.", "Right-click 'Guest' and select Properties.", "Check the box 'Account is disabled', then click OK."],
+        cli: "Disable-LocalUser -Name 'Guest' -ErrorAction SilentlyContinue"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Press Win + R, type 'lusrmgr.msc' and press Enter.", "Open Users, right-click Guest > Properties.", "Check 'Account is disabled' and click Apply > OK."],
+        cli: "Disable-LocalUser -Name 'Guest' -ErrorAction SilentlyContinue"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Server Manager > Tools > Computer Management > Local Users and Groups > Users.", "Right-click Guest > Properties.", "Ensure 'Account is disabled' is checked and click OK."],
+        cli: "Disable-LocalUser -Name 'Guest' -ErrorAction SilentlyContinue"
+      },
+    },
+    verify: "Run '(Get-LocalUser -Name Guest).Enabled' in PowerShell. It must return 'False'.",
+    caution: "Never delete the Guest account (it is a built-in operating system security principal); keep it disabled."
+  },
+  "vss_deleted": {
+    summary: "Enable System Protection and Volume Shadow Copies to guarantee rapid local snapshot rollbacks after ransomware attacks.",
+    steps: ["Press Win + R, type 'sysdm.cpl' and press Enter.", "Select the 'System Protection' tab, select your system drive (C:), and click 'Configure'.", "Choose 'Turn on system protection', adjust Max Usage to 5-10% of disk space, and click OK.", "Click 'Create...' and name the new restore point (e.g. 'R3P_Secure_Baseline')."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Press Win + R, type 'sysdm.cpl' and press Enter.", "Select the 'System Protection' tab, select your system drive (C:), and click 'Configure'.", "Choose 'Turn on system protection', adjust Max Usage to 5-10% of disk space, and click OK.", "Click 'Create...' and name the new restore point (e.g. 'R3P_Secure_Baseline')."],
+        cli: "Enable-ComputerRestore -Drive 'C:\'; Checkpoint-Computer -Description 'R3P_Baseline_RestorePoint' -RestorePointType 'MODIFY_SETTINGS'"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Press Win + R, type 'systempropertiesprotection.exe' and press Enter.", "Select drive C: > Configure > Select 'Turn on system protection' > Allocate 5-10% disk space > OK.", "Click 'Create' to generate an immediate initial restore point."],
+        cli: "Enable-ComputerRestore -Drive 'C:\'; Checkpoint-Computer -Description 'R3P_Baseline_RestorePoint' -RestorePointType 'MODIFY_SETTINGS'"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open File Explorer, right-click the volume (C:) and choose 'Configure Shadow Copies...'.", "Select the volume, click 'Settings' to allocate storage, then click 'Enable'.", "Click 'Create Now' to establish an immediate point-in-time snapshot."],
+        cli: "vssadmin create shadow /for=C:"
+      },
+    },
+    verify: "Run 'vssadmin list shadows' in elevated CMD/PowerShell. Confirm active shadow copies are listed for volume C:.",
+    caution: "Previously deleted shadow copies cannot be restored by turning the service back on; this creates new recovery points going forward. Pair with offline backups."
+  },
+  "backup_absent": {
+    summary: "Configure scheduled, resilient backups to provide a dependable fail-safe against total data loss during encryption events.",
+    steps: ["Open Settings (Win + I) > System > Storage > Advanced storage settings > Backup options.", "Configure File History with an external hard drive or setup automatic OneDrive / enterprise cloud sync.", "Alternatively, deploy and schedule an approved enterprise backup agent (e.g. Veeam, Acronis)."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) > System > Storage > Advanced storage settings > Backup options.", "Configure File History with an external hard drive or setup automatic OneDrive / enterprise cloud sync.", "Alternatively, deploy and schedule an approved enterprise backup agent (e.g. Veeam, Acronis)."],
+        cli: "Set-Service -Name 'fhsvc' -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service 'fhsvc' -ErrorAction SilentlyContinue"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) > Update & Security > Backup.", "Click 'Add a drive' under 'Back up using File History' and select a dedicated backup drive.", "Click 'More options' and verify backup frequency (e.g. Every hour or daily)."],
+        cli: "Set-Service -Name 'fhsvc' -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service 'fhsvc' -ErrorAction SilentlyContinue"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open Server Manager > Manage > Add Roles and Features > Features > Check 'Windows Server Backup' > Install.", "Open Tools > Windows Server Backup ('wbadmin.msc').", "Click 'Backup Schedule Wizard' in the Actions pane and configure a daily automated backup to dedicated storage."],
+        cli: "Install-WindowsFeature Windows-Server-Backup; Start-Service -Name 'wbengine' -ErrorAction SilentlyContinue"
+      },
+    },
+    verify: "Run 'wbadmin get status' or inspect your backup software console to confirm recent successful backup jobs.",
+    caution: "Ensure at least one backup tier is air-gapped, immutable, or stored offsite so attackers cannot delete backups prior to triggering ransomware."
+  },
+  "bitlocker_off": {
+    summary: "Enable BitLocker full-disk encryption to prevent offline data theft, physical drive extraction, and extortion.",
+    steps: ["Open Settings (Win + I) > Privacy & security > Device encryption (or Control Panel > BitLocker Drive Encryption).", "Click 'Turn on BitLocker' for Drive C:.", "Choose how to back up your recovery key (Microsoft Account, Entra ID, or Print/Save file).", "Choose 'Encrypt used disk space only' and 'New encryption mode', then start encryption."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) > Privacy & security > Device encryption (or Control Panel > BitLocker Drive Encryption).", "Click 'Turn on BitLocker' for Drive C:.", "Choose how to back up your recovery key (Microsoft Account, Entra ID, or Print/Save file).", "Choose 'Encrypt used disk space only' and 'New encryption mode', then start encryption."],
+        cli: "Enable-BitLocker -MountPoint 'C:' -EncryptionMethod XtsAes256 -UsedSpaceOnly -TpmProtector"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Control Panel > System and Security > BitLocker Drive Encryption.", "Click 'Turn on BitLocker' next to the operating system drive.", "Save the 48-digit recovery key in a secure location.", "Follow the setup wizard to complete drive encryption."],
+        cli: "Enable-BitLocker -MountPoint 'C:' -EncryptionMethod XtsAes256 -UsedSpaceOnly -TpmProtector"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Server Manager > Add Roles and Features > Features > Check 'BitLocker Drive Encryption' > Install (reboot required).", "After reboot, open File Explorer, right-click Drive C: > 'Turn on BitLocker'.", "Escrow the recovery key into Active Directory Domain Services."],
+        cli: "Install-WindowsFeature BitLocker -IncludeManagementTools; Enable-BitLocker -MountPoint 'C:' -TpmProtector"
+      },
+    },
+    verify: "Run 'manage-bde -status C:' in elevated command prompt. 'Protection Status' must show 'Protection On'.",
+    caution: "MANDATORY: Always backup and confirm retrieval of the 48-digit BitLocker recovery key to Active Directory or a secure vault before initiating encryption."
+  },
+  "wdigest_enabled": {
+    summary: "Disable WDigest cleartext credential caching to prevent attackers from reading plaintext passwords out of memory.",
+    steps: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to: HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\SecurityProviders\WDigest.", "Double-click 'UseLogonCredential' and set its value to '0' (or delete the DWORD).", "Click OK."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to: HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\SecurityProviders\WDigest.", "Double-click 'UseLogonCredential' and set its value to '0' (or delete the DWORD).", "Click OK."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest' -Name 'UseLogonCredential' -Value 0 -Type DWord"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to: HKLM\System\CurrentControlSet\Control\SecurityProviders\WDigest.", "Set DWORD 'UseLogonCredential' to 0.", "Click OK."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest' -Name 'UseLogonCredential' -Value 0 -Type DWord"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open 'gpedit.msc' or Domain Group Policy.", "Navigate to Computer Configuration > Administrative Templates > System > Credentials Delegation.", "Or apply the registry setting directly using the CLI command below."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest' -Name 'UseLogonCredential' -Value 0 -Type DWord"
+      },
+    },
+    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest -Name UseLogonCredential'. It must return '0'.",
+    caution: "Currently logged-in users must sign out and sign back in to purge existing plaintext credentials from LSASS memory."
+  },
+  "laps_absent": {
+    summary: "Deploy Windows LAPS to randomize and manage local administrator passwords, blocking pass-the-hash lateral traversal.",
+    steps: ["Windows 11 (22H2+) includes native Windows LAPS built into the OS!", "Press Win + R, type 'gpedit.msc' > Computer Configuration > Administrative Templates > System > LAPS.", "Enable 'Configure password backup directory' and select 'Microsoft Entra ID' or 'Active Directory'.", "Configure password complexity and age requirements."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Windows 11 (22H2+) includes native Windows LAPS built into the OS!", "Press Win + R, type 'gpedit.msc' > Computer Configuration > Administrative Templates > System > LAPS.", "Enable 'Configure password backup directory' and select 'Microsoft Entra ID' or 'Active Directory'.", "Configure password complexity and age requirements."],
+        cli: "Get-Item C:\Windows\System32\Laps.dll -ErrorAction SilentlyContinue"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["On updated Windows 10 (April 2023 update or later), native Windows LAPS is installed.", "For older builds, download and install the Microsoft LAPS MSI package from Microsoft Download Center.", "Configure policy via 'gpedit.msc' under System > LAPS."],
+        cli: "Get-Item C:\Windows\System32\Laps.dll -ErrorAction SilentlyContinue"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Windows Server 2019/2022 includes native Windows LAPS with current cumulative updates.", "Open Domain Group Policy Management, configure LAPS under Computer Configuration > Policies > Admin Templates > System > LAPS.", "Set the backup directory to Active Directory and assign delegated read rights to IT administrators."],
+        cli: "Get-Command *Laps* -ErrorAction SilentlyContinue"
+      },
+    },
+    verify: "Inspect 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\LAPS\Config' or check Active Directory computer object for the msLAPS-Password attribute.",
+    caution: "Requires directory permissions and schema support so workstations can securely escrow random passwords into Active Directory or Entra ID."
+  },
+  "nla_disabled": {
+    summary: "Enforce Network Level Authentication (NLA) for Remote Desktop to mitigate pre-authentication vulnerabilities and denial-of-service risks.",
+    steps: ["Press Win + R, type 'sysdm.cpl' and press Enter.", "Select the 'Remote' tab.", "Under Remote Desktop, check the box: 'Allow remote connections only with Network Level Authentication (recommended)'.", "Click Apply > OK."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Press Win + R, type 'sysdm.cpl' and press Enter.", "Select the 'Remote' tab.", "Under Remote Desktop, check the box: 'Allow remote connections only with Network Level Authentication (recommended)'.", "Click Apply > OK."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 1 -Type DWord"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) > System > Remote Desktop > Click 'Advanced settings'.", "Check the box: 'Require computers to use Network Level Authentication to connect'.", "Return to Settings."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 1 -Type DWord"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Server Manager > Local Server > Click on Remote Desktop setting.", "In System Properties, ensure 'Allow connections only from computers running Remote Desktop with Network Level Authentication' is checked.", "Click OK."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 1 -Type DWord"
+      },
+    },
+    verify: "Run 'Get-ItemPropertyValue -Path \"HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp\" -Name UserAuthentication'. It must return '1'.",
+    caution: "Pre-NLA legacy remote desktop clients will no longer be able to establish connections."
+  },
+  "always_install_elevated": {
+    summary: "Disable AlwaysInstallElevated to stop standard unprivileged users from installing malicious MSI packages with SYSTEM rights.",
+    steps: ["Press Win + R, type 'gpedit.msc' and press Enter.", "Navigate to: Computer Configuration > Administrative Templates > Windows Components > Windows Installer.", "Double-click 'Always install with elevated privileges' and set it to 'Disabled'.", "Repeat the step under User Configuration > Administrative Templates > Windows Components > Windows Installer."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Press Win + R, type 'gpedit.msc' and press Enter.", "Navigate to: Computer Configuration > Administrative Templates > Windows Components > Windows Installer.", "Double-click 'Always install with elevated privileges' and set it to 'Disabled'.", "Repeat the step under User Configuration > Administrative Templates > Windows Components > Windows Installer."],
+        cli: "Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open 'gpedit.msc'.", "Go to Computer Configuration & User Configuration > Admin Templates > Windows Components > Windows Installer.", "Set 'Always install with elevated privileges' to Disabled in both locations.", "Run 'gpupdate /force'."],
+        cli: "Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open Group Policy Management Console or 'gpedit.msc'.", "Set 'Always install with elevated privileges' to Disabled under both Computer Configuration and User Configuration.", "Run the CLI cleanup command to purge registry values."],
+        cli: "Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue"
+      },
+    },
+    verify: "Run 'Get-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer -Name AlwaysInstallElevated -ErrorAction SilentlyContinue'. It must return null or 0.",
+    caution: "Standard users will require administrator elevation or an automated software distribution tool to install system software."
+  },
+  "vulnerable_driver_blocklist_enabled": {
+    summary: "Enable Microsoft Vulnerable Driver Blocklist to neutralize BYOVD (Bring Your Own Vulnerable Driver) attacks that terminate EDR defenses.",
+    steps: ["Open Settings (Win + I) > Privacy & security > Windows Security > Device security.", "Click 'Core isolation details'.", "Locate 'Microsoft Vulnerable Driver Blocklist' and toggle it to ON.", "Restart the computer when prompted."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) > Privacy & security > Windows Security > Device security.", "Click 'Core isolation details'.", "Locate 'Microsoft Vulnerable Driver Blocklist' and toggle it to ON.", "Restart the computer when prompted."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config' -Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Ensure Windows 10 is updated with KB5018410 or newer.", "Open elevated PowerShell and run the CLI fix command below to enable blocklist enforcement.", "Restart the computer."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config' -Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["On Windows Server 2022/2025, enable via elevated PowerShell command below.", "Alternatively, deploy a custom Windows Defender Application Control (WDAC) policy containing Microsoft's driver blocklist.", "Restart the server."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config' -Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord"
+      },
+    },
+    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config -Name VulnerableDriverBlocklistEnable'. It must return '1'.",
+    caution: "Requires a system reboot. Blocks known vulnerable third-party hardware drivers that have been weaponized by ransomware syndicates."
+  },
+  "hvci_enabled": {
+    summary: "Enable HVCI (Hypervisor-Protected Code Integrity / Memory Integrity) to prevent unsigned kernel-mode rootkits and driver exploits.",
+    steps: ["Open Settings (Win + I) > Privacy & security > Windows Security > Device security.", "Click 'Core isolation details'.", "Toggle 'Memory integrity' to ON.", "Restart your PC."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) > Privacy & security > Windows Security > Device security.", "Click 'Core isolation details'.", "Toggle 'Memory integrity' to ON.", "Restart your PC."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' -Name 'Enabled' -Value 1 -Type DWord"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) > Update & Security > Windows Security > Device security.", "Click 'Core isolation details'.", "Toggle 'Memory integrity' to ON.", "Restart your PC."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' -Name 'Enabled' -Value 1 -Type DWord"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open 'gpedit.msc' > Computer Configuration > Administrative Templates > System > Device Guard.", "Double-click 'Turn On Virtualization Based Security', select Enabled.", "Under 'Virtualization Based Protection of Code Integrity', select 'Enabled with UEFI lock'.", "Click OK and schedule a reboot."],
+        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' -Name 'Enabled' -Value 1 -Type DWord"
+      },
+    },
+    verify: "Run 'Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard | Select-Object SecurityServicesRunning'. It should include '2' (HVCI).",
+    caution: "Requires CPU virtualization (Intel VT-x / AMD-V) enabled in BIOS/UEFI. Incompatible legacy hardware drivers must be updated before Memory Integrity will turn on."
+  },
+  "asr_rules_configured": {
+    summary: "Configure Microsoft Defender Attack Surface Reduction (ASR) rules to block common malware exploitation pathways.",
+    steps: ["Open Terminal (PowerShell Admin).", "Run the CLI command below to enable core ASR rules protecting against ransomware (blocking child processes from Office apps and blocking credential stealing)."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Terminal (PowerShell Admin).", "Run the CLI command below to enable core ASR rules protecting against ransomware (blocking child processes from Office apps and blocking credential stealing)."],
+        cli: "Add-MpPreference -AttackSurfaceReductionRules_Ids 'd4f940ab-401b-4efc-aadc-ad5f3c50688a','be9ba2d9-53ea-44a7-9161-ab422405a9c6','92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b' -AttackSurfaceReductionRules_Actions Enabled"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open 'gpedit.msc' > Computer Configuration > Admin Templates > Windows Components > Microsoft Defender Antivirus > Attack Surface Reduction.", "Open 'Configure Attack Surface Reduction rules', set to Enabled, and add the rule GUIDs.", "Or run the PowerShell command directly as Administrator."],
+        cli: "Add-MpPreference -AttackSurfaceReductionRules_Ids 'd4f940ab-401b-4efc-aadc-ad5f3c50688a','be9ba2d9-53ea-44a7-9161-ab422405a9c6','92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b' -AttackSurfaceReductionRules_Actions Enabled"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Configure through Microsoft Intune / Defender for Endpoint security portal for fleet deployment.", "On standalone servers with Defender, run the PowerShell command below."],
+        cli: "Add-MpPreference -AttackSurfaceReductionRules_Ids 'd4f940ab-401b-4efc-aadc-ad5f3c50688a','be9ba2d9-53ea-44a7-9161-ab422405a9c6' -AttackSurfaceReductionRules_Actions Enabled"
+      },
+    },
+    verify: "Run 'Get-MpPreference | Select-Object -ExpandProperty AttackSurfaceReductionRules_Ids' in PowerShell. Rule GUIDs must be listed.",
+    caution: "In organizations with specialized Office macro add-ins, test ASR rules in Audit mode first to verify compatibility before enforcing."
+  },
+  "mock_attack_vss_enum_succeeded": {
+    summary: "Active Validation Finding: The host permitted a WMI enumeration query against Volume Shadow Copies without behavioral alert or blocking.",
+    steps: ["Open Windows Security > Virus & threat protection > Manage settings.", "Ensure 'Cloud-delivered protection' and 'Automatic sample submission' are active.", "Enable Defender behavioral monitoring and WMI event persistence blocking via the PowerShell CLI below."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Windows Security > Virus & threat protection > Manage settings.", "Ensure 'Cloud-delivered protection' and 'Automatic sample submission' are active.", "Enable Defender behavioral monitoring and WMI event persistence blocking via the PowerShell CLI below."],
+        cli: "Set-MpPreference -DisableBehaviorMonitoring $false; Add-MpPreference -AttackSurfaceReductionRules_Ids 'e6db77e5-3df2-4cf1-b95a-63e5dd9f9353' -AttackSurfaceReductionRules_Actions Enabled"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings > Update & Security > Windows Security > Virus & threat protection > Manage settings.", "Verify Real-time protection is ON.", "Execute the PowerShell command below to ensure behavior monitoring is active."],
+        cli: "Set-MpPreference -DisableBehaviorMonitoring $false; Add-MpPreference -AttackSurfaceReductionRules_Ids 'e6db77e5-3df2-4cf1-b95a-63e5dd9f9353' -AttackSurfaceReductionRules_Actions Enabled"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["In Microsoft Defender for Endpoint / third-party EDR, create an alert rule for suspicious discovery queries targeting Win32_ShadowCopy.", "Ensure behavioral monitoring is enabled on the server."],
+        cli: "Set-MpPreference -DisableBehaviorMonitoring $false"
+      },
+    },
+    verify: "Run '(Get-MpPreference).DisableBehaviorMonitoring' in PowerShell. It must return 'False'. Perform a rescan in R3P Agent.",
+    caution: "The R3P check is a safe, read-only simulation. Do not disable WMI or Shadow Copy service to suppress this finding."
+  },
+  "mock_attack_mass_rename_succeeded": {
+    summary: "Active Validation Finding: The host permitted rapid file renaming and extension modification in a short interval (the hallmark of live ransomware encryption).",
+    steps: ["Open Settings (Win + I) > Privacy & security > Windows Security > Virus & threat protection.", "Scroll down to 'Ransomware protection' and click 'Manage ransomware protection'.", "Toggle 'Controlled folder access' to ON to block unauthorized applications from mass-altering files."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) > Privacy & security > Windows Security > Virus & threat protection.", "Scroll down to 'Ransomware protection' and click 'Manage ransomware protection'.", "Toggle 'Controlled folder access' to ON to block unauthorized applications from mass-altering files."],
+        cli: "Set-MpPreference -EnableControlledFolderAccess Enabled"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) > Update & Security > Windows Security > Virus & threat protection.", "Click 'Manage ransomware protection'.", "Toggle 'Controlled folder access' to ON."],
+        cli: "Set-MpPreference -EnableControlledFolderAccess Enabled"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["On Windows Server with Defender, enable Controlled folder access via PowerShell or deploy anti-ransomware heuristic policies through your central EDR console."],
+        cli: "Set-MpPreference -EnableControlledFolderAccess Enabled"
+      },
+    },
+    verify: "Run '(Get-MpPreference).EnableControlledFolderAccess' in PowerShell. It should return '1' (Enabled). Perform a rescan in R3P Agent.",
+    caution: "Controlled folder access guards Documents, Pictures, and Desktop folders. Legitimate custom apps writing to these folders can be added via 'Add-MpPreference -ControlledFolderAccessAllowedApplications'."
+  },
+  "rdp_open": {
+    summary: "Close or restrict exposed Remote Desktop Protocol (port 3389) to prevent automated brute-force and credential stuffing attacks.",
+    steps: ["Open Settings (Win + I) and select System > Remote Desktop.", "Toggle the 'Remote Desktop' switch to OFF.", "Click Confirm when asked to disable Remote Desktop."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) and select System > Remote Desktop.", "Toggle the 'Remote Desktop' switch to OFF.", "Click Confirm when asked to disable Remote Desktop."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) and select System > Remote Desktop.", "Toggle 'Enable Remote Desktop' to OFF.", "Click Confirm in the confirmation dialog."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open Server Manager > Local Server.", "Click 'Enabled' next to Remote Desktop to open System Properties.", "Select 'Don't allow remote connections to this computer' and click OK (or run 'sconfig' and choose Option 7 > D)."],
+        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+      },
+    },
+    verify: "Run 'Test-NetConnection -ComputerName 127.0.0.1 -Port 3389' in PowerShell. 'TcpTestSucceeded' must be False.",
+    caution: "Disabling RDP immediately drops active remote sessions. Only execute if you have physical or out-of-band console access. If RDP is needed, place it behind a VPN and require NLA."
+  },
+  "backup_configured": {
+    summary: "Configure scheduled, resilient backups to provide a dependable fail-safe against total data loss during encryption events.",
+    steps: ["Open Settings (Win + I) > System > Storage > Advanced storage settings > Backup options.", "Configure File History with an external hard drive or setup automatic OneDrive / enterprise cloud sync.", "Alternatively, deploy and schedule an approved enterprise backup agent (e.g. Veeam, Acronis)."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) > System > Storage > Advanced storage settings > Backup options.", "Configure File History with an external hard drive or setup automatic OneDrive / enterprise cloud sync.", "Alternatively, deploy and schedule an approved enterprise backup agent (e.g. Veeam, Acronis)."],
+        cli: "Set-Service -Name 'fhsvc' -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service 'fhsvc' -ErrorAction SilentlyContinue"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) > Update & Security > Backup.", "Click 'Add a drive' under 'Back up using File History' and select a dedicated backup drive.", "Click 'More options' and verify backup frequency (e.g. Every hour or daily)."],
+        cli: "Set-Service -Name 'fhsvc' -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service 'fhsvc' -ErrorAction SilentlyContinue"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Open Server Manager > Manage > Add Roles and Features > Features > Check 'Windows Server Backup' > Install.", "Open Tools > Windows Server Backup ('wbadmin.msc').", "Click 'Backup Schedule Wizard' in the Actions pane and configure a daily automated backup to dedicated storage."],
+        cli: "Install-WindowsFeature Windows-Server-Backup; Start-Service -Name 'wbengine' -ErrorAction SilentlyContinue"
+      },
+    },
+    verify: "Run 'wbadmin get status' or inspect your backup software console to confirm recent successful backup jobs.",
+    caution: "Ensure at least one backup tier is air-gapped, immutable, or stored offsite so attackers cannot delete backups prior to triggering ransomware."
+  },
+  "firewall_on": {
+    summary: "Enable Windows Defender Firewall across Domain, Private, and Public profiles to block unauthorized inbound connections and scanning.",
+    steps: ["Open Settings (Win + I) > Privacy & security > Windows Security > Firewall & network protection.", "Click on Domain network, Private network, and Public network.", "Toggle 'Microsoft Defender Firewall' to ON for all three profiles."],
+    tabs: {
+      win11: {
+        label: "Windows 11",
+        gui: ["Open Settings (Win + I) > Privacy & security > Windows Security > Firewall & network protection.", "Click on Domain network, Private network, and Public network.", "Toggle 'Microsoft Defender Firewall' to ON for all three profiles."],
+        cli: "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True"
+      },
+      win10: {
+        label: "Windows 10",
+        gui: ["Open Settings (Win + I) > Update & Security > Windows Security > Firewall & network protection.", "Click each profile (Domain, Private, Public) and toggle the firewall to ON."],
+        cli: "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True"
+      },
+      server: {
+        label: "Windows Server",
+        gui: ["Server Manager > Local Server > Click 'Windows Defender Firewall'.", "Click 'Turn Windows Defender Firewall on or off' in the left pane.", "Select 'Turn on Windows Defender Firewall' for all network locations and click OK."],
+        cli: "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True"
+      },
+    },
+    verify: "Run 'Get-NetFirewallProfile | Select-Object Name, Enabled' in PowerShell. All three profiles must report Enabled: True.",
+    caution: "Ensure required line-of-business services have specific inbound port allow rules before turning on the firewall to prevent connection drops."
+  },
 }
 
 // ── MITRE ATT&CK Mapping ─────────────────────────────────────────────────────

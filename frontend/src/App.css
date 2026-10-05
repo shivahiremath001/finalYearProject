@@ -467,3 +467,227 @@ select.search-input optgroup { background: var(--bg); color: var(--subtle); font
   .fleet-machine-table th:nth-child(9), .fleet-machine-table td:nth-child(9) { width: 12%; }
   .fleet-machine-table th:nth-child(10), .fleet-machine-table td:nth-child(10) { width: 14%; }
 }
+
+/* ── Manual Fix Guide (Multi-OS Tabbed) ─────────────────────────────────── */
+.manual-fix-container {
+  margin-top: 14px;
+  padding: 16px;
+  background: var(--overlay);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.manual-fix-summary {
+  margin-bottom: 14px;
+  padding-left: 10px;
+  border-left: 3px solid var(--primary);
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.manual-fix-os-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 4px;
+  border-radius: 9px;
+  border: 1px solid var(--border2);
+}
+
+.manual-fix-os-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--subtle);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.manual-fix-os-tab:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.manual-fix-os-tab.active {
+  background: var(--card);
+  color: var(--primary);
+  border-color: var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.os-tab-icon {
+  font-size: 13px;
+}
+
+.manual-fix-section {
+  margin-bottom: 14px;
+}
+
+.manual-fix-subtitle {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--subtle);
+  margin: 0 0 8px 0;
+  display: flex;
+  align-items: center;
+}
+
+.manual-fix-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.manual-fix-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--card);
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border2);
+}
+
+.step-num {
+  background: rgba(0, 229, 255, 0.12);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-family: monospace;
+}
+
+.step-text {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.cli-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cli-terminal-box {
+  background: #090d16;
+  border: 1px solid #1f293d;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+}
+
+.cli-terminal-prompt {
+  color: #00e5ff;
+  font-family: monospace;
+  font-weight: bold;
+  font-size: 12px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.cli-terminal-code {
+  color: #30d158;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.45;
+}
+
+.btn-copy {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s;
+}
+
+.btn-copy:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn-copy.copied {
+  background: rgba(48, 209, 88, 0.18);
+  border-color: var(--safe);
+  color: var(--safe);
+}
+
+.manual-fix-verify-card {
+  background: rgba(48, 209, 88, 0.07);
+  border: 1px solid rgba(48, 209, 88, 0.22);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.verify-header {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--safe);
+  margin-bottom: 4px;
+}
+
+.verify-text {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.5;
+  font-family: monospace;
+}
+
+.manual-fix-caution-card {
+  background: rgba(255, 159, 10, 0.07);
+  border: 1px solid rgba(255, 159, 10, 0.22);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.caution-header {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--warning);
+  margin-bottom: 4px;
+}
+
+.caution-text {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--subtle);
+  line-height: 1.5;
+}
