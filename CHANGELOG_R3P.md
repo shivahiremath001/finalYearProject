@@ -20,7 +20,7 @@
 
 ## T4: Weight Sensitivity Analysis
 - **What**: Built a synthetic analysis script (`analysis/sensitivity.py`) that generates 300 random hosts and scores them, then repeatedly perturbs all Severity and Likelihood weights by up to 20% to measure ranking stability.
-- **Why**: Proves that the scoring model's prioritization is mathematically robust and not overly brittle to minor, subjective adjustments in the assigned weights.
+- **Why**: Proves that the scoring model's prioritization is mathematically robust and not overly brittle to minor, subjective adjustments in the assigned weights. Also suppresses false-positive static analysis (Pyrefly) warnings caused by cross-directory imports.
 - **Files Touched**: `analysis/sensitivity.py`, `analysis/output/sensitivity.*`
 - **How to demo**: Open `analysis/output/sensitivity.png` or `sensitivity.md` to see the high Spearman correlation (>0.95), proving the rankings hold steady.
 

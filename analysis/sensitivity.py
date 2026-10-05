@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 # Add backend to path to import scoring
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'backend'))
 
-from scoring import score, SEVERITY_WEIGHTS, LIKELIHOOD_WEIGHTS
-from schemas import CollectorData
+from scoring import score, SEVERITY_WEIGHTS, LIKELIHOOD_WEIGHTS  # type: ignore
+from schemas import CollectorData  # type: ignore
 
 def generate_host():
     """Generate a synthetic host with random telemetry flags"""
@@ -61,7 +61,7 @@ def run_sensitivity(d_values=[0.10, 0.20], num_hosts=300, num_iterations=1000):
         
         for _ in range(num_iterations):
             # Patch weights temporarily
-            import scoring
+            import scoring  # type: ignore
             
             orig_S = scoring.SEVERITY_WEIGHTS.copy()
             orig_L = scoring.LIKELIHOOD_WEIGHTS.copy()
@@ -124,7 +124,7 @@ def run_sensitivity(d_values=[0.10, 0.20], num_hosts=300, num_iterations=1000):
         
     # Generate Chart
     plt.figure(figsize=(10, 6))
-    plt.boxplot([r['correlations'] for r in results], labels=[f"d={r['d']}" for r in results])
+    plt.boxplot([r['correlations'] for r in results], labels=[f"d={r['d']}" for r in results])  # type: ignore
     plt.title("Spearman Correlation of Host Rankings (1000 Iterations)")
     plt.ylabel("Spearman Rank Correlation")
     plt.xlabel("Weight Perturbation Bound (d)")
