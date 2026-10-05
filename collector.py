@@ -707,6 +707,70 @@ def get_local_ip() -> str:
         return "unknown"
 
 
+def get_mac_address() -> str:
+    """
+    Returns the primary active network adapter MAC address in XX:XX:XX:XX:XX:XX format.
+    Tries PowerShell Get-NetAdapter first (on Windows), then uuid.getnode() as universal fallback.
+    """
+    if platform.system() == "Windows":
+        try:
+            # Query active connected physical adapter
+            cmd = '(Get-NetAdapter | Where-Object { $_.Status -eq "Up" -and $_.MacAddress -ne $null } | Select-Object -First 1).MacAddress'
+            mac = _ps(cmd).strip().replace("-", ":").upper()
+            if mac and len(mac) == 17:
+                return mac
+        except Exception:
+            pass
+
+    try:
+        import uuid
+        node = uuid.getnode()
+        mac = ":".join(f"{(node >> (8 * (5 - i))) & 0xFF:02X}" for i in range(6))
+        if mac and mac != "00:00:00:00:00:00":
+            return mac
+    except Exception:
+        pass
+
+    return "UNKNOWN"
+
+
+def get_machine_guid() -> str:
+    """
+    Returns the persistent machine GUID / hardware UUID.
+    On Windows, reads HKLM\\SOFTWARE\\Microsoft\\Cryptography\\MachineGuid or BIOS UUID.
+    """
+    if platform.system() == "Windows":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as key:
+                val, _ = winreg.QueryValueEx(key, "MachineGuid")
+                if val:
+                    return str(val).strip()
+        except Exception:
+            pass
+
+        try:
+            cmd = "(Get-CimInstance -Class Win32_ComputerSystemProduct).UUID"
+            out = _ps(cmd).strip()
+            if out and out.lower() != "none" and len(out) > 8:
+                return out
+        except Exception:
+            pass
+
+    # Linux fallback (/etc/machine-id)
+    for p in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+        try:
+            if os.path.exists(p):
+                with open(p, "r") as f:
+                    content = f.read().strip()
+                    if content:
+                        return content
+        except Exception:
+            pass
+
+    return "UNKNOWN"
+
+
 def check_rdp_open() -> bool:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(1)
@@ -1630,6 +1694,8 @@ class MonitorApp(tk.Tk):
             "os": get_os_info(),
             "asset_type": load_agent_config().get("asset_type", "Workstation"),
             "ip": get_local_ip(),
+            "mac_address": get_mac_address(),
+            "machine_guid": get_machine_guid(),
             "timestamp": datetime.now().isoformat(),
             "data": data,
         }

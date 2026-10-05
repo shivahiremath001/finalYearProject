@@ -408,7 +408,16 @@ function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy 
         <div className="detail-header">
           <div>
             <h2 className="detail-hostname">{hostname}</h2>
-            <p className="detail-meta">{machine.ip_address} · {machine.os_version || 'Unknown OS'}</p>
+            <p className="detail-meta">
+              <span>IP: <strong>{machine.ip_address}</strong></span>
+              {(detail?.mac_address || machine.mac_address) && (
+                <span> · MAC: <code style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{detail?.mac_address || machine.mac_address}</code></span>
+              )}
+              {(detail?.machine_guid || machine.machine_guid) && (
+                <span> · GUID: <code style={{ fontFamily: 'monospace', color: 'var(--text-secondary)', fontSize: '0.85em' }}>{detail?.machine_guid || machine.machine_guid}</code></span>
+              )}
+              <span> · {machine.os_version || 'Unknown OS'}</span>
+            </p>
           </div>
           <div className="detail-header-right">
             <span className={`online-dot ${offline ? 'offline' : 'online'}`} />
@@ -757,6 +766,9 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
                   last_risk_score: data.risk_score,
                   last_risk_class: data.risk_class,
                   last_seen: data.timestamp,
+                  ip_address: data.ip || updated[idx].ip_address,
+                  mac_address: data.mac_address || updated[idx].mac_address,
+                  machine_guid: data.machine_guid || updated[idx].machine_guid,
                 }
                 return updated
               })
@@ -787,7 +799,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
   }
 
   const sorted = [...machines]
-    .filter(m => (m.hostname.toLowerCase().includes(searchQ.toLowerCase()) || m.ip_address.includes(searchQ)) && (!filterRisk || m.last_risk_class === filterRisk))
+    .filter(m => (m.hostname.toLowerCase().includes(searchQ.toLowerCase()) || m.ip_address.includes(searchQ) || (m.mac_address && m.mac_address.toLowerCase().includes(searchQ.toLowerCase())) || (m.machine_guid && m.machine_guid.toLowerCase().includes(searchQ.toLowerCase()))) && (!filterRisk || m.last_risk_class === filterRisk))
     .sort((a, b) => {
       const av = a[sortField] ?? '', bv = b[sortField] ?? ''
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1)
@@ -879,7 +891,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
                   <Download size={14} /> Preview Report
                 </button>
                 <input id="search-machines" type="text" className="search-input"
-                  placeholder="Search hostname or IP…"
+                  placeholder="Search hostname, IP, MAC…"
                   value={searchQ} onChange={e => setSearchQ(e.target.value)} />
                 <button className="btn btn-ghost btn-sm" onClick={fetchMachines}>↻ Refresh</button>
               </div>
@@ -933,7 +945,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
                       <th className="sortable" onClick={() => toggleSort('hostname')}>
                         Hostname {sortField === 'hostname' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
                       </th>
-                      <th>IP Address</th>
+                      <th>IP / MAC Address</th>
                       <th>OS</th>
                       <th className="sortable" onClick={() => toggleSort('last_risk_score')}>
                         Risk Score {sortField === 'last_risk_score' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
@@ -972,7 +984,14 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
                               {hasAnomaly && <span className="anomaly-indicator" title="Posture drift detected"><TriangleAlert size={14} color="var(--critical)" style={{marginLeft: 8}} /></span>}
                             </div>
                           </td>
-                          <td className="muted">{m.ip_address}</td>
+                          <td className="muted">
+                            <div>{m.ip_address}</div>
+                            {m.mac_address && (
+                              <div style={{ fontSize: '11px', color: 'var(--text-secondary, #86868b)', fontFamily: 'monospace' }}>
+                                {m.mac_address}
+                              </div>
+                            )}
+                          </td>
                           <td className="muted os-cell">{m.os_version || '—'}</td>
                           <td>
                             <div className="score-bar-wrap">

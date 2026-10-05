@@ -36,6 +36,9 @@ import string
 
 FAKE_HOSTNAME = "DEMO-PC-" + "".join(random.choices(string.digits, k=4))
 FAKE_IP = f"192.168.1.{random.randint(50, 200)}"
+FAKE_MAC = ":".join(f"{random.randint(0, 255):02X}" for _ in range(6))
+import uuid
+FAKE_GUID = str(uuid.uuid4())
 FAKE_OS = random.choice(["Windows 10 Pro", "Windows 11 Enterprise", "Windows Server 2022"])
 
 MOCK_STATE = {
@@ -328,6 +331,14 @@ def get_os_info() -> str:
 
 def get_local_ip() -> str:
     return FAKE_IP
+
+
+def get_mac_address() -> str:
+    return FAKE_MAC
+
+
+def get_machine_guid() -> str:
+    return FAKE_GUID
 
 
 # ── CHECK MANIFEST ─────────────────────────────────────────────────────────────
@@ -763,6 +774,8 @@ class MonitorApp(tk.Tk):
             "os":        FAKE_OS,
             "asset_type": "Workstation",
             "ip":        FAKE_IP,
+            "mac_address": get_mac_address(),
+            "machine_guid": get_machine_guid(),
             "timestamp": datetime.now().isoformat(),
             "data":      data,
         }

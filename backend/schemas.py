@@ -70,6 +70,8 @@ class IngestRequest(BaseModel):
     asset_type: Optional[str] = "Workstation"
     timestamp: Optional[str] = None
     ip: Optional[str] = None  # auto-filled by server if not present
+    mac_address: Optional[str] = None
+    machine_guid: Optional[str] = None
     data: CollectorData
 
 
@@ -114,6 +116,8 @@ class MachineOut(BaseModel):
     id: int
     hostname: str
     ip_address: str
+    mac_address: Optional[str] = None
+    machine_guid: Optional[str] = None
     os_version: Optional[str]
     asset_criticality: Optional[float] = 1.0
     first_seen: Optional[datetime]
@@ -131,6 +135,8 @@ class ScanOut(BaseModel):
     id: int
     hostname: str
     ip_address: str
+    mac_address: Optional[str] = None
+    machine_guid: Optional[str] = None
     scanned_at: Optional[datetime]
     risk_score: float
     risk_class: str

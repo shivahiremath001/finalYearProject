@@ -82,15 +82,16 @@ def generate_daily_report(db: Session) -> str:
     pdf.section_title("2. Current Endpoint Status")
     
     # Table Header
-    pdf.set_font("helvetica", "B", 10)
+    pdf.set_font("helvetica", "B", 9)
     pdf.set_fill_color(220, 220, 220)
-    pdf.cell(50, 8, "Hostname", border=1, fill=True)
-    pdf.cell(40, 8, "IP Address", border=1, fill=True)
-    pdf.cell(40, 8, "Risk Class", border=1, fill=True)
-    pdf.cell(30, 8, "Risk Score", border=1, fill=True, ln=True)
+    pdf.cell(45, 8, "Hostname", border=1, fill=True)
+    pdf.cell(35, 8, "IP Address", border=1, fill=True)
+    pdf.cell(40, 8, "MAC Address", border=1, fill=True)
+    pdf.cell(35, 8, "Risk Class", border=1, fill=True)
+    pdf.cell(25, 8, "Risk Score", border=1, fill=True, ln=True)
 
     # Table Body
-    pdf.set_font("helvetica", "", 10)
+    pdf.set_font("helvetica", "", 9)
     for m in machines:
         # Determine color for risk class
         if m.last_risk_class == "CRITICAL":
@@ -102,11 +103,12 @@ def generate_daily_report(db: Session) -> str:
         else:
             pdf.set_text_color(48, 209, 88) # SAFE
 
-        pdf.cell(50, 8, m.hostname[:20], border=1)
+        pdf.cell(45, 8, m.hostname[:20], border=1)
         pdf.set_text_color(30, 30, 30) # Reset color
-        pdf.cell(40, 8, m.ip_address, border=1)
-        pdf.cell(40, 8, m.last_risk_class, border=1)
-        pdf.cell(30, 8, f"{m.last_risk_score:.1f}", border=1, ln=True)
+        pdf.cell(35, 8, m.ip_address[:15], border=1)
+        pdf.cell(40, 8, (m.mac_address or "—")[:17], border=1)
+        pdf.cell(35, 8, m.last_risk_class, border=1)
+        pdf.cell(25, 8, f"{m.last_risk_score:.1f}", border=1, ln=True)
 
     pdf.ln(10)
 

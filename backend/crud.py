@@ -13,6 +13,36 @@ from datetime import datetime, timezone
 from remediation_registry import get_command
 
 
+def find_machine(
+    db: Session,
+    hostname: str | None = None,
+    mac_address: str | None = None,
+    machine_guid: str | None = None,
+) -> MachineRegistry | None:
+    """
+    Finds a machine by permanent identifiers in order of specificity:
+    1. Machine GUID (Hardware UUID / OS MachineGuid)
+    2. MAC Address (Physical NIC)
+    3. Hostname
+    """
+    if machine_guid and machine_guid.strip().upper() not in ("UNKNOWN", "NONE", ""):
+        m = db.query(MachineRegistry).filter(MachineRegistry.machine_guid == machine_guid.strip()).first()
+        if m:
+            return m
+
+    if mac_address and mac_address.strip().upper() not in ("UNKNOWN", "00:00:00:00:00:00", ""):
+        m = db.query(MachineRegistry).filter(MachineRegistry.mac_address == mac_address.strip().upper()).first()
+        if m:
+            return m
+
+    if hostname and hostname.strip():
+        m = db.query(MachineRegistry).filter(MachineRegistry.hostname == hostname.strip()).first()
+        if m:
+            return m
+
+    return None
+
+
 def upsert_machine(
     db: Session,
     req: IngestRequest,
@@ -21,18 +51,28 @@ def upsert_machine(
     risk_class: str,
     asset_criticality: float = 1.0,
 ) -> MachineRegistry:
-    """Create or update the machine registry row for this host."""
-    machine = db.query(MachineRegistry).filter_by(hostname=req.host_id).first()
+    """Create or update the machine registry row for this host using hardware GUID / MAC / hostname."""
+    mac = req.mac_address.strip().upper() if req.mac_address else None
+    guid = req.machine_guid.strip() if req.machine_guid else None
+
+    machine = find_machine(db, hostname=req.host_id, mac_address=mac, machine_guid=guid)
     if machine is None:
         machine = MachineRegistry(
             hostname=req.host_id,
             ip_address=ip,
+            mac_address=mac,
+            machine_guid=guid,
             os_version=req.os,
         )
         db.add(machine)
 
-    # Always refresh mutable fields
+    # Always refresh mutable fields & hardware identifiers
+    machine.hostname = req.host_id
     machine.ip_address = ip
+    if mac and mac not in ("UNKNOWN", "00:00:00:00:00:00"):
+        machine.mac_address = mac
+    if guid and guid not in ("UNKNOWN", "NONE"):
+        machine.machine_guid = guid
     machine.os_version = req.os
     machine.last_risk_score = risk_score
     machine.last_risk_class = risk_class
@@ -61,6 +101,8 @@ def create_scan(
         machine_id=machine_id,
         hostname=req.host_id,
         ip_address=ip,
+        mac_address=req.mac_address.strip().upper() if req.mac_address else None,
+        machine_guid=req.machine_guid.strip() if req.machine_guid else None,
         # Entry Vector
         smb_v1_enabled=d.smb_v1_enabled,
         rdp_enabled=d.rdp_open,  # collector name → model name
@@ -350,6 +392,8 @@ def seed_dummy_machine(db: Session):
         dummy = MachineRegistry(
             hostname="DUMMY-DEMO-01",
             ip_address="10.0.0.99",
+            mac_address="00:50:56:C0:00:08",
+            machine_guid="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
             os_version="Windows 11 Pro",
             last_risk_score=85.0,
             last_risk_class="CRITICAL",
@@ -362,6 +406,8 @@ def seed_dummy_machine(db: Session):
             machine_id=dummy.id,
             hostname=dummy.hostname,
             ip_address=dummy.ip_address,
+            mac_address=dummy.mac_address,
+            machine_guid=dummy.machine_guid,
             smb_v1_enabled=True,
             rdp_enabled=True,
             autorun_enabled=True,

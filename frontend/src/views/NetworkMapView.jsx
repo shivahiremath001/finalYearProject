@@ -51,7 +51,7 @@ export default function NetworkMapView({ token }) {
 
               nodes.push({ 
                 id: m.hostname, 
-                name: `${m.hostname} (${m.ip_address})`, 
+                name: `${m.hostname} (${m.ip_address}${m.mac_address ? ` · ${m.mac_address}` : ''})`, 
                 val: 3, 
                 color: mColor 
               });

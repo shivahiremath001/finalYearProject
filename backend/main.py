@@ -231,13 +231,19 @@ async def ingest(
     dashboard via WebSocket.
     """
     ip = req.ip or request.client.host or "unknown"
+    mac = req.mac_address.strip().upper() if req.mac_address else None
+    guid = req.machine_guid.strip() if req.machine_guid else None
+
+    # Check for existing machine by hardware GUID / MAC / hostname
+    machine = crud.find_machine(db, hostname=req.host_id, mac_address=mac, machine_guid=guid)
+    target_hostname = machine.hostname if machine else req.host_id
 
     # Get previous score for trend arrow BEFORE upserting
-    prev_score = crud.get_previous_score(db, req.host_id)
-    prev_scan = crud.get_latest_scan(db, req.host_id)
+    prev_score = crud.get_previous_score(db, target_hostname)
+    prev_scan = crud.get_latest_scan(db, target_hostname)
 
     # Apply Policy Exceptions
-    exceptions = crud.get_policy_exceptions(db, req.host_id)
+    exceptions = crud.get_policy_exceptions(db, target_hostname)
     exc_keys = [e.param_key for e in exceptions]
 
     # Score the machine
@@ -268,10 +274,8 @@ async def ingest(
             posture_diff = json.dumps(diffs)
 
     # Run anomaly detection (drift tracking)
-    anomaly_result = detect_anomaly(db, req.host_id, risk_score)
+    anomaly_result = detect_anomaly(db, target_hostname, risk_score)
 
-    # Upsert machine registry + insert scan row (with anomaly data)
-    machine = db.query(models.MachineRegistry).filter_by(hostname=req.host_id).first()
     was_offline = (machine is not None and machine.status == "OFFLINE")
 
     machine = crud.upsert_machine(
@@ -297,7 +301,7 @@ async def ingest(
 
     anomaly_flag = " [ANOMALY]" if anomaly_result.is_anomaly else ""
     print(
-        f"[INGEST] {req.host_id} ({ip}) -> "
+        f"[INGEST] {req.host_id} (IP: {ip}, MAC: {machine.mac_address}) -> "
         f"score={risk_score} class={risk_class} "
         f"z={anomaly_result.z_score}{anomaly_flag} "
         f"trend={'UP' if prev_score and risk_score > prev_score else 'DOWN' if prev_score and risk_score < prev_score else '='}"
@@ -329,6 +333,8 @@ async def ingest(
             "event": "scan",
             "hostname": req.host_id,
             "ip": ip,
+            "mac_address": machine.mac_address,
+            "machine_guid": machine.machine_guid,
             "os": req.os,
             "risk_score": risk_score,
             "risk_class": risk_class,
@@ -546,6 +552,8 @@ def get_machine_detail(
     return {
         "hostname": machine.hostname,
         "ip_address": machine.ip_address,
+        "mac_address": machine.mac_address,
+        "machine_guid": machine.machine_guid,
         "os_version": machine.os_version,
         "first_seen": machine.first_seen,
         "last_seen": machine.last_seen,

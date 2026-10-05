@@ -14,6 +14,8 @@ class MachineRegistry(Base):
     id = Column(Integer, primary_key=True, index=True)
     hostname = Column(String, unique=True, index=True, nullable=False)
     ip_address = Column(String, nullable=False)
+    mac_address = Column(String, nullable=True, index=True)
+    machine_guid = Column(String, nullable=True, index=True)
     os_version = Column(String, nullable=True)
     first_seen = Column(DateTime(timezone=True), server_default=func.now())
     last_seen = Column(
@@ -39,6 +41,8 @@ class ConfigurationScan(Base):
     machine_id = Column(Integer, nullable=False, index=True)
     hostname = Column(String, nullable=False)
     ip_address = Column(String, nullable=False)
+    mac_address = Column(String, nullable=True)
+    machine_guid = Column(String, nullable=True)
     scanned_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # ── ENTRY VECTOR PHASE ──────────────────────────────────────────────────

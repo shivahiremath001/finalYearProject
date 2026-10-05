@@ -124,7 +124,7 @@ export default function PoliciesView({ token, target, onViewSystem, onClearTarge
                 <div style={{ position: 'relative' }}>
                   <select value={newPolicy.hostname} onChange={e => setNewPolicy({...newPolicy, hostname: e.target.value})} className="search-input" style={{ width: '100%', background: 'var(--overlay)', cursor: 'pointer' }}>
                     {machines.map(m => (
-                      <option key={m.hostname} value={m.hostname}>{m.hostname} ({m.ip_address})</option>
+                      <option key={m.hostname} value={m.hostname}>{m.hostname} ({m.ip_address}{m.mac_address ? ` · ${m.mac_address}` : ''})</option>
                     ))}
                   </select>
                   <ChevronDown size={16} color="var(--subtle)" style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
