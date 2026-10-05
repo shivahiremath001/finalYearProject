@@ -422,3 +422,15 @@ def seed_dummy_machine(db: Session):
         )
         db.add(scan)
         db.commit()
+
+
+def prune_old_scans(db: Session, keep_days: int = 30):
+    """
+    Prune scan history older than `keep_days` to prevent unbounded database growth
+    when continuously monitoring many agents.
+    """
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
+    # Delete older scans
+    db.query(ConfigurationScan).filter(ConfigurationScan.scanned_at < cutoff).delete()
+    db.commit()

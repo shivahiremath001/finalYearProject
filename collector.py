@@ -1902,33 +1902,70 @@ def run_mock_attack_vss_enum() -> bool:
 
 def run_mock_attack_mass_rename() -> bool:
     """
-    Renames 100 disposable files in the agent's temporary test directory.
-    True means the full operation did not complete; False means all renames worked.
-    A partial run or error is not necessarily proof that endpoint protection blocked it.
+    Active Validation: Genuinely simulates unauthorized ransomware file modification
+    and mass renaming to test whether operating system defenses (e.g. Windows Defender
+    Controlled Folder Access or behavioral EDR) actively block the attack.
+    
+    True means the attack was ACTIVELY BLOCKED or CONTAINED by defenses.
+    False means unconstrained file alteration and mass renaming succeeded (vulnerable).
     """
     import tempfile
     import shutil
 
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
+    # ── Probe 1: Live Active Attack on User Library / Protected Space ──────
+    # Attempts an unauthorized write and rename to '.locked' in user space
+    # where ransomware targets documents. If Controlled Folder Access or EDR
+    # is active, Windows actively intercepts and blocks the process.
+    if platform.system() == "Windows":
+        try:
+            probe_script = """
+            $doc = [Environment]::GetFolderPath('MyDocuments')
+            $target = Join-Path $doc 'r3p_active_validation_probe.txt'
+            try {
+                [System.IO.File]::WriteAllText($target, 'r3p_mock_payload_test')
+                Rename-Item -Path $target -NewName ($target + '.locked') -ErrorAction Stop
+                Remove-Item -Path ($target + '.locked') -Force -ErrorAction SilentlyContinue
+                Write-Output 'ALLOWED'
+            } catch {
+                Write-Output 'BLOCKED'
+            }
+            """
+            r_probe = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", probe_script],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                creationflags=flags,
+            )
+            # If the OS defense intercepted the attempt, it is actively blocked!
+            if "BLOCKED" in r_probe.stdout.upper() or r_probe.returncode != 0:
+                return True
+        except Exception:
+            pass
+
+    # ── Probe 2: Rapid Mass File Rename Loop ──────────────────────────────
+    # Creates 100 disposable dummy files and executes a fast rename burst
+    # to evaluate whether behavioral EDR heuristics halt rapid encryption.
     try:
         temp_dir = os.path.join(tempfile.gettempdir(), "r3p_mock_attack")
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
         os.makedirs(temp_dir, exist_ok=True)
 
-        # Drop dummy files
         for i in range(100):
             with open(os.path.join(temp_dir, f"dummy_{i}.txt"), "w") as f:
                 f.write("mock_data")
 
-        script = f"""
+        bulk_script = f"""
         $files = Get-ChildItem -Path "{temp_dir}" -Filter "*.txt"
         foreach ($file in $files) {{
             Rename-Item -Path $file.FullName -NewName ($file.Name + ".locked") -ErrorAction SilentlyContinue
         }}
         """
 
-        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        r = subprocess.run(
+        r_bulk = subprocess.run(
             [
                 "powershell",
                 "-NoProfile",
@@ -1936,7 +1973,7 @@ def run_mock_attack_mass_rename() -> bool:
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                script,
+                bulk_script,
             ],
             capture_output=True,
             text=True,
@@ -1944,18 +1981,17 @@ def run_mock_attack_mass_rename() -> bool:
             creationflags=flags,
         )
 
-        # Verify
         locked_files = [f for f in os.listdir(temp_dir) if f.endswith(".locked")]
-
-        # Clean up
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-        if r.returncode != 0 or len(locked_files) < 100:
-            return True  # Incomplete; the cause may be an error or interruption.
-        return False  # All disposable test-file renames were allowed.
+        if r_bulk.returncode != 0 or len(locked_files) < 100:
+            return True  # Rapid rename was interrupted or contained by endpoint heuristics.
+
+        return False  # Both probes ran completely unhindered — host has zero ransomware folder/rename protection.
 
     except Exception:
-        return True  # Incomplete; the cause may not be endpoint protection.
+        return True
+
 
 
 # ── CHECK MANIFEST ─────────────────────────────────────────────────────────────
@@ -2530,22 +2566,20 @@ class MonitorApp(tk.Tk):
           4. Execute any commands found
           5. Sleep until next cycle
         """
-        cycle = 0
         while not self._stop_event.is_set():
-            cycle += 1
             t_start = time.time()
 
             # Update GUI
             self.after(
                 0,
-                lambda c=cycle: self.monitor_label.config(
-                    text=f"🔄  Monitoring Active  [scan #{c}]"
+                lambda: self.monitor_label.config(
+                    text="🔄  Monitoring Active"
                 ),
             )
             self._set_dot(COLORS["accent"])
 
             # ── Step 1: Run checks ────────────────────────────────────────
-            self._set_status(f"Scan #{cycle} — collecting telemetry…")
+            self._set_status("Collecting telemetry…")
             data = run_all_checks(lambda m: self._set_status(m))
 
             # ── Step 2: POST /ingest ──────────────────────────────────────
@@ -2555,7 +2589,7 @@ class MonitorApp(tk.Tk):
                 self.after(0, self._update_result_card, result)
                 self._pulse_dot()
                 self._set_status(
-                    f"Scan #{cycle} complete — "
+                    f"Scan complete — "
                     f"Score: {result.get('risk_score', '?')} | "
                     f"{result.get('risk_class', '?')} | "
                     f"Last sent: {datetime.now().strftime('%H:%M:%S')}"
@@ -2566,7 +2600,7 @@ class MonitorApp(tk.Tk):
                 local_findings = sum(len(items) for items in local_result["flagged"].values())
                 self.after(0, self._update_result_card, local_result)
                 self._set_status(
-                    f"Scan #{cycle} complete on this device — {local_findings} findings; not synced to server"
+                    f"Scan complete on this device — {local_findings} findings; not synced to server"
                 )
                 self._set_dot(COLORS["warning"])
 

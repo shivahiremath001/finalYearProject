@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/FastAPI-0.100+-green?logo=fastapi" alt="FastAPI">
   <img src="https://img.shields.io/badge/React-18+-61DAFB?logo=react" alt="React">
   <img src="https://img.shields.io/badge/SQLite-3%20(WAL)-003B57?logo=sqlite" alt="SQLite">
-  <img src="https://img.shields.io/badge/Tests-17%20Passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-19%20Passed-brightgreen" alt="Tests">
 </p>
 
 ---
@@ -27,20 +27,23 @@
 
 **R3P** is a modern client-server platform designed to continuously assess the ransomware resilience of Windows endpoints. While traditional vulnerability scanners look for known software CVEs, R3P actively audits **configuration drift** and **security posture**—the settings that determine whether ransomware can execute, spread laterally, steal credentials, and destroy recovery backups.
 
-R3P also incorporates **Active Behavioral Validation**: safe, non-destructive mock ransomware simulations (such as VSS shadow copy enumeration and rapid mass-file renaming) to verify whether local endpoint protection (EDR/AV) actively detects and stops ransomware behavior.
+R3P also incorporates **Active Behavioral Validation**: safe, non-destructive mock ransomware simulations (such as VSS shadow copy enumeration and dual-probe rapid mass-file renaming targeting protected folders) to verify whether local endpoint protection (EDR/AV, Windows Defender Controlled Folder Access) actively intercepts and halts ransomware behavior in real time.
 
 ---
 
 ## Key Features
 
 - 🕵️ **Continuous Telemetry:** Windows agent collecting 27 low-level security parameters across the ransomware attack chain (WMI, Registry, PowerShell, CIM).
-- 🎯 **Active Behavioral Probes:** Runs a read-only VSS inventory query and temporary-file rename probe; these show whether those exact benign actions were allowed.
+- 🔑 **Immutable Hardware Identity:** Triple-tier identity resolution based on Windows Cryptography `MachineGuid` and BIOS UUID, preventing duplicate fleet registration during DHCP IP roaming or Wi-Fi/Ethernet interface switching.
+- 🎯 **Dual-Probe Active Behavioral Validation:** 
+  - *Probe 1 (Protected Folder Ransomware Attack — MITRE T1486):* Safely targets user library space with `.locked` file alterations to test whether Windows Defender Controlled Folder Access (CFA) or EDR actively blocks the attack at runtime (Event ID 1123).
+  - *Probe 2 (Rapid Mass-Rename Burst):* Tests behavioral velocity heuristics across 100 batch operations.
 - 📊 **Dynamic, Explainable Risk Scoring:** Computes a normalized 0–100 risk score dynamically derived from active weights ($S \times L \times C_{asset}$) with top-factor score explanations (`/machines/{id}/score-explanation`).
 - 🚨 **Consistent Active-Test Escalation:** When a mock attack succeeds, the effective risk score is raised to at least 75/100 so its numeric score agrees with the CRITICAL classification; detailed weighted findings remain available separately.
 - 🚨 **Statistical Posture Drift Detection:** Rolling Z-score anomaly detector with variance floor ($\sigma_{eff} = \max(\sigma, 1.0)$) and remediation drop suppression.
 - ⏱️ **Automatic Agent Offline Detection:** Background server daemon monitoring heartbeat timestamps (`last_seen > 150s`) to mark disconnected nodes.
 - ⚡ **Controlled Remote Remediation:** Admin-confirmed fixes use server and agent allowlists; the agent rescans immediately afterward so the dashboard can verify the observed configuration.
-- 🧭 **Guided Manual Remediation:** Risks without a safe agent command show parameter-specific steps and verification guidance in the system detail view.
+- 🧭 **Multi-OS Guided Manual Remediation:** Comprehensive, tabbed remediation guides covering **Windows 11, Windows 10, and Windows Server** across all 27 findings with step-by-step GUI instructions, copy-paste PowerShell commands with one-click clipboard copying, post-fix verification, and operational cautions.
 - 🔬 **Sensitivity & Validation Benchmark Suite:** Monte Carlo weight perturbation analysis and synthetic archetype validation (`analysis/`).
 - 🌐 **Real-Time Fleet Dashboard:** React 18 single-page application with live WebSocket event streaming, risk analytics, and network topology visualization.
 
@@ -52,11 +55,11 @@ R3P currently offers remote fixes for 17 settings: SMBv1, exposed RDP, USB AutoR
 
 Run the collector on a disposable Windows 10/11 test VM with the endpoint protection product and policies you intend to demonstrate enabled. Run the collector elevated so permission failures are less likely to be mistaken for security blocking, and take a VM snapshot before making configuration changes. Do not turn off Defender or tamper protection, add exclusions, or weaken organizational policy just to force a mock test to pass or fail.
 
-The VSS test performs a read-only inventory query, which Windows commonly permits; the mass-rename test only renames disposable files under the agent's temporary folder. A successful result means that exact benign action was allowed, not that ransomware encryption or VSS deletion would necessarily succeed. Default Windows Defender settings may allow these probes, and CFA/ASR rules do not necessarily target these exact actions. For a reliable presentation of individual settings/remediations, use simulated telemetry (`python demo_collector.py`) for the fleet view and a resettable Windows VM for actual configuration changes. Label simulated results clearly and do not present them as live endpoint enforcement evidence.
+The VSS test performs a read-only inventory query, which Windows commonly permits. The mass-rename test uses a **Dual-Probe Validation Architecture**: Probe 1 targets user document space with an unauthorized create/rename (`.locked`) to trigger Windows Defender Controlled Folder Access (CFA Event ID 1123) or EDR hooks, while Probe 2 tests behavioral velocity heuristics across 100 batch operations in temporary space. A successful result means the action was allowed without defensive interception. When Controlled Folder Access is enabled (`Set-MpPreference -EnableControlledFolderAccess Enabled`), Defender actively intercepts the mock file manipulation and the agent registers the attack as **BLOCKED**.
 
-RDP disablement and Tamper Protection also include manual guidance: disabling RDP can cut off administration, and the Tamper Protection command is best effort, so verify it through Windows Security or the organization’s Defender/Intune policy. Other organization-dependent settings (such as backups, BitLocker recovery-key escrow, AppLocker, LAPS, and EDR behavior rules) show tailored guidance. The PowerShell execution-policy action is labeled as defense in depth: it is not a security boundary.
+RDP disablement and Tamper Protection also include manual guidance: disabling RDP can cut off administration, and the Tamper Protection command is best effort, so verify it through Windows Security or the organization’s Defender/Intune policy. Other organization-dependent settings (such as backups, BitLocker recovery-key escrow, AppLocker, LAPS, and EDR behavior rules) show tailored multi-OS guidance (Windows 11, Windows 10, Windows Server). The PowerShell execution-policy action is labeled as defense in depth: it is not a security boundary.
 
-If agents are distributed as compiled executables, rebuild the agent from the updated `collector.py` and redeploy it to receive the in-app fix guide and current remediation behavior.
+If agents are distributed as compiled executables, rebuild the agent from the updated `collector.py` and redeploy it to receive the in-app multi-OS fix guide and current remediation behavior.
 
 ---
 
@@ -110,10 +113,10 @@ docker-compose up -d --build
 
 ## Testing & Validation Suite
 
-Run automated unit and integration tests (Scoring, Dynamic $Risk_{max}$, Heartbeat Monitor, Anomaly Detector):
+Run automated unit and integration tests (Scoring, Dynamic $Risk_{max}$, Heartbeat Monitor, Machine Identity Persistence, Anomaly Detector):
 
 ```powershell
-# Run the test suite (17 passed)
+# Run the test suite (19 passed)
 pytest backend/tests -v
 ```
 
@@ -134,11 +137,15 @@ python analysis/validate.py
 
 R3P uses an allowlist-based remote execution model. No arbitrary code or dynamic scripts are transmitted across the network. An administrator confirms a fix in the dashboard; the backend queues a pre-approved command key, and the agent checks that key against its local allowlist before executing PowerShell. The agent then performs a fresh scan so the dashboard can compare the resulting configuration. This verification is separate from the command execution acknowledgment.
 
-## Windows agent fix guide
+## Windows Agent & Web Multi-OS Fix Guides
 
-Open **Fix guide** in the R3P Windows agent to search the full guide directory, or choose **How to fix** next to a finding. Each guide explains what the check observes, why it matters, what to confirm before changing settings, ordered Windows navigation or policy steps, how to verify the effective result, and compatibility, administrator, restart, and managed-policy cautions. A guide is informational and never runs a command. Where an allowlisted local fix exists, **Apply fix** is a separate, confirmation-gated action. Review the manual guide first, make one change at a time, preserve a working support/recovery path, and run a fresh scan to verify the observed configuration. Findings without an allowlisted fix must be handled through Windows or the organization's approved device-management process.
+Both the React Web Dashboard and the Tkinter endpoint agent expose a searchable, categorized **Multi-OS Fix Guide** directory across all 27 findings. Each guide provides dedicated tabs for **Windows 11**, **Windows 10**, and **Windows Server**, including:
+1. **Step-by-Step GUI Navigation:** Version-specific paths for Windows Security, Settings app, Control Panel, and Server Manager.
+2. **PowerShell CLI Command:** Hardened, ready-to-run administrative PowerShell command with a one-click clipboard copy button (`📋 Copy Command`).
+3. **Verification Command:** Standalone PowerShell query to confirm the setting is actively applied.
+4. **Operational Cautions:** Highlighting administrator requirements, service dependencies, reboot prerequisites, and domain Group Policy overrides.
 
-The active validation probes are limited simulations. The VSS probe performs a read-only WMI enumeration and does not delete shadow copies. The mass-rename probe creates disposable files under the agent's `%TEMP%` subfolder and renames those files; it does not encrypt user documents. An allowed probe is not proof that real ransomware would succeed, and a blocked probe is not proof of complete ransomware protection. In particular, a generic Defender setting or Controlled Folder Access is not guaranteed to block these exact probes. Review endpoint protection events and use vendor-supported validation in a disposable lab; do not disable WMI/backups, weaken protection, or add broad exclusions to force a desired result.
+The active validation probes execute real-world behavior to test defensive containment. The VSS probe executes a read-only inventory query to check for reconnaissance protection. The mass-rename probe uses a dual-probe method (user document library probe + batch temporary burst) to test whether Windows Defender Controlled Folder Access or behavioral EDR intercepts unauthorized file changes. When CFA is enabled, Defender logs Event ID 1123 and blocks the operation, marking the active validation as defended.
 
 When the server cannot be reached, the agent still displays the current scan's locally identified findings and offers the relevant guidance. It marks these results **LOCAL SCAN / NOT SYNCED**. The risk score is not calculated offline because server policy exceptions are unavailable; the dashboard score and exception handling resume when telemetry reaches the server.
 

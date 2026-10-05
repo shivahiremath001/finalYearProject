@@ -122,6 +122,18 @@ async def monitor_heartbeats():
         except Exception as e:
             print(f"Error in heartbeat monitor: {e}")
 
+async def prune_database():
+    """Background task: prunes scans older than 30 days every hour to manage DB size."""
+    while True:
+        try:
+            await asyncio.sleep(3600)  # 1 hour
+            with SessionLocal() as db:
+                crud.prune_old_scans(db, keep_days=30)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"Error in database pruner: {e}")
+
 # ── Lifespan (startup / shutdown logic) ──────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -135,13 +147,16 @@ async def lifespan(app: FastAPI):
         db.close()
     
     # Start background tasks
-    task = asyncio.create_task(monitor_heartbeats())
+    task1 = asyncio.create_task(monitor_heartbeats())
+    task2 = asyncio.create_task(prune_database())
     
     yield
     # --- Shutdown (add cleanup here if needed in future) ---
-    task.cancel()
+    task1.cancel()
+    task2.cancel()
     try:
-        await task
+        await task1
+        await task2
     except asyncio.CancelledError:
         pass
 

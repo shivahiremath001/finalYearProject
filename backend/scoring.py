@@ -512,6 +512,8 @@ def score(
     # The ordinary weighted findings remain visible in per-parameter details.
     if has_mock_attack_success:
         normalized_score = max(normalized_score, 75.0)
+    elif has_critical_failure:
+        normalized_score = max(normalized_score, 50.0)
 
     # ── Classification — matches project specification exactly ──────────────
     # Primary bands by numeric score
@@ -523,10 +525,6 @@ def score(
         risk_class = "LOW RISK"
     else:
         risk_class = "SAFE"
-
-    # Escalation rule 2: any S=5 failure → at least HIGH RISK
-    if has_critical_failure and risk_class in ("SAFE", "LOW RISK"):
-        risk_class = "HIGH RISK"
 
     # Generate MITRE ATT&CK hits for flagged parameters
     mitre_hits = get_mitre_hits(flagged)

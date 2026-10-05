@@ -1,4 +1,4 @@
-﻿"""
+"""
 test_scoring.py - T1 comprehensive test suite for scoring engine.
 """
 import pytest
@@ -72,7 +72,8 @@ def test_d_all_failed_workstation_scores_100():
     assert risk_class == 'CRITICAL'
 
 def test_e_dc_greater_than_server_greater_than_workstation():
-    data = CollectorData(rdp_open=True, firewall_on=False)
+    data = _all_clean()
+    data.rdp_open = True
     w_score, _, _, _, w_crit, _ = score(data, 'Workstation')
     s_score, _, _, _, s_crit, _ = score(data, 'Server')
     dc_score, _, _, _, dc_crit, _ = score(data, 'Domain Controller')
@@ -84,20 +85,23 @@ def test_e_dc_greater_than_server_greater_than_workstation():
 def test_f_single_s5_failure_escalates():
     data = _all_clean()
     data.smb_v1_enabled = True
-    _, risk_class, flagged, _, _, _ = score(data, 'Workstation')
+    risk_score, risk_class, flagged, _, _, _ = score(data, 'Workstation')
+    assert risk_score >= 50.0
     assert risk_class in ('HIGH RISK', 'CRITICAL')
     assert 'smb_v1_enabled' in flagged.get('Entry Vector', [])
 
 def test_g_mock_attack_yields_critical():
     data = _all_clean()
     data.mock_attack_vss_enum_blocked = False
-    _, risk_class, _, _, _, _ = score(data, 'Workstation')
+    risk_score, risk_class, _, _, _, _ = score(data, 'Workstation')
+    assert risk_score >= 75.0
     assert risk_class == 'CRITICAL'
 
 def test_g2_mock_rename_attack_yields_critical():
     data = _all_clean()
     data.mock_attack_mass_rename_blocked = False
-    _, risk_class, _, _, _, _ = score(data, 'Workstation')
+    risk_score, risk_class, _, _, _, _ = score(data, 'Workstation')
+    assert risk_score >= 75.0
     assert risk_class == 'CRITICAL'
 
 def test_h_explain_score_sorted():
@@ -120,13 +124,16 @@ def test_critical_vulnerability_escalation():
     data = _all_clean()
     data.smb_v1_enabled = True
     risk_score, risk_class, flagged, mitre_hits, criticality, top_contributors = score(data, 'Workstation')
+    assert risk_score >= 50.0
     assert risk_class in ['HIGH RISK', 'CRITICAL']
     assert 'smb_v1_enabled' in flagged.get('Entry Vector', [])
 
 def test_asset_criticality_multiplier():
-    data = CollectorData(rdp_open=True, firewall_on=False)
+    data = _all_clean()
+    data.rdp_open = True
     w_score, _, _, _, w_crit, _ = score(data, 'Workstation')
     dc_score, _, _, _, dc_crit, _ = score(data, 'Domain Controller')
     assert dc_crit == 1.6
     assert w_crit == 1.0
     assert dc_score > w_score
+

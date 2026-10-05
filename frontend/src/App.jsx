@@ -324,7 +324,7 @@ function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy 
         .then(r => r.ok ? r.json() : []),
       apiFetch('/policies', {}, token)
         .then(r => r.ok ? r.json() : []),
-      apiFetch(`/commands/${encodeURIComponent(hostname)}/history?limit=20`, {}, token)
+      apiFetch(`/commands/${encodeURIComponent(hostname)}/history?limit=10`, {}, token)
         .then(r => r.ok ? r.json() : []),
     ]).then(([det, cmds, policies, hist]) => {
       setDetail(det)
@@ -848,7 +848,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
         )}
         {activeTab === 'remediation' && <RemediationView token={token} />}
         {activeTab === 'analytics' && <AnalyticsView token={token} />}
-        {activeTab === 'map' && <NetworkMapView token={token} />}
+        {activeTab === 'map' && <NetworkMapView token={token} onViewSystem={hostname => { setActiveTab('overview'); setSelected(hostname); }} />}
         {activeTab === 'about' && <AboutView />}
         
         {activeTab === 'overview' && (

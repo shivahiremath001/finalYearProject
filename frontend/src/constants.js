@@ -176,17 +176,17 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Open Settings (Win + I) and select System > Remote Desktop.", "Toggle the 'Remote Desktop' switch to OFF.", "Click Confirm when asked to disable Remote Desktop."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
       },
       win10: {
         label: "Windows 10",
         gui: ["Open Settings (Win + I) and select System > Remote Desktop.", "Toggle 'Enable Remote Desktop' to OFF.", "Click Confirm in the confirmation dialog."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
       },
       server: {
         label: "Windows Server",
         gui: ["Open Server Manager > Local Server.", "Click 'Enabled' next to Remote Desktop to open System Properties.", "Select 'Don't allow remote connections to this computer' and click OK (or run 'sconfig' and choose Option 7 > D)."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
       },
     },
     verify: "Run 'Test-NetConnection -ComputerName 127.0.0.1 -Port 3389' in PowerShell. 'TcpTestSucceeded' must be False.",
@@ -199,20 +199,20 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Open Settings (Win + I) and navigate to Bluetooth & devices > AutoPlay.", "Toggle 'Use AutoPlay for all media and devices' to OFF.", "Set Removable drive and Memory card default actions to 'Take no action'."],
-        cli: "$path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'; if (!(Test-Path $path)) { New-Item -Path $path -Force }; Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord"
+        cli: "$path = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; if (!(Test-Path $path)) { New-Item -Path $path -Force }; Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord"
       },
       win10: {
         label: "Windows 10",
         gui: ["Open Settings (Win + I) and navigate to Devices > AutoPlay.", "Toggle 'Use AutoPlay for all media and devices' to OFF.", "Set dropdowns for removable drives to 'Take no action'."],
-        cli: "$path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'; if (!(Test-Path $path)) { New-Item -Path $path -Force }; Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord"
+        cli: "$path = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; if (!(Test-Path $path)) { New-Item -Path $path -Force }; Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord"
       },
       server: {
         label: "Windows Server",
         gui: ["Press Win + R, type 'gpedit.msc' and press Enter.", "Navigate to Computer Configuration > Administrative Templates > Windows Components > AutoPlay Policies.", "Double-click 'Turn off AutoPlay', select 'Enabled', choose 'All drives', and click OK."],
-        cli: "$path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'; if (!(Test-Path $path)) { New-Item -Path $path -Force }; Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord"
+        cli: "$path = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; if (!(Test-Path $path)) { New-Item -Path $path -Force }; Set-ItemProperty -Path $path -Name 'NoDriveTypeAutoRun' -Value 255 -Type DWord"
       },
     },
-    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer -Name NoDriveTypeAutoRun'. It should return '255'.",
+    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer -Name NoDriveTypeAutoRun'. It should return '255'.",
     caution: "This disables automatic launching; users can still manually open files in File Explorer."
   },
   "open_network_shares": {
@@ -245,17 +245,17 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Open Microsoft Word or Excel, then click File > Options.", "Click Trust Center > Trust Center Settings > Macro Settings.", "Select 'Disable VBA macros with notification' (or 'Disable all macros without notification').", "Check 'Enable macros in digitally signed documents' if your organization signs internal scripts, then click OK."],
-        cli: "Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Word\Security' -Name 'VBAWarnings' -Value 4 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security' -Name 'VBAWarnings' -Value 4 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Office\\16.0\\Word\\Security' -Name 'VBAWarnings' -Value 4 -Type DWord; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Office\\16.0\\Excel\\Security' -Name 'VBAWarnings' -Value 4 -Type DWord"
       },
       win10: {
         label: "Windows 10",
         gui: ["Open Word or Excel > File > Options.", "Navigate to Trust Center > Trust Center Settings > Macro Settings.", "Select 'Disable VBA macros with notification'.", "Click OK to save changes."],
-        cli: "Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Word\Security' -Name 'VBAWarnings' -Value 4 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security' -Name 'VBAWarnings' -Value 4 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Office\\16.0\\Word\\Security' -Name 'VBAWarnings' -Value 4 -Type DWord; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Office\\16.0\\Excel\\Security' -Name 'VBAWarnings' -Value 4 -Type DWord"
       },
       server: {
         label: "Windows Server",
         gui: ["For RDS/Terminal servers, open 'gpedit.msc' or Domain Group Policy.", "Navigate to User Configuration > Administrative Templates > Microsoft Office > Security Settings.", "Set 'VBA Macro Notification Settings' to Enabled and choose 'Disable all with notification'."],
-        cli: "Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Word\Security' -Name 'VBAWarnings' -Value 4 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Office\16.0\Excel\Security' -Name 'VBAWarnings' -Value 4 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Office\\16.0\\Word\\Security' -Name 'VBAWarnings' -Value 4 -Type DWord; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Office\\16.0\\Excel\\Security' -Name 'VBAWarnings' -Value 4 -Type DWord"
       },
     },
     verify: "Open Word/Excel > File > Options > Trust Center > Macro Settings. Verify 'Disable VBA macros with notification' is selected.",
@@ -291,20 +291,20 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Press Win + R, type 'UserAccountControlSettings.exe' and press Enter.", "Move the slider to the default position ('Notify me only when apps try to make changes') or to the top ('Always notify').", "Click OK, confirm the UAC prompt, and restart the computer."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableLUA' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'EnableLUA' -Value 1 -Type DWord"
       },
       win10: {
         label: "Windows 10",
         gui: ["Press Win + R, type 'UserAccountControlSettings.exe' and press Enter.", "Move the slider up to the recommended level (second from top) or top level.", "Click OK and restart the system when prompted."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableLUA' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'EnableLUA' -Value 1 -Type DWord"
       },
       server: {
         label: "Windows Server",
         gui: ["Open 'secpol.msc' > Local Policies > Security Options.", "Locate 'User Account Control: Run all administrators in Admin Approval Mode'.", "Set it to Enabled, click OK, and schedule a system reboot."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableLUA' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'EnableLUA' -Value 1 -Type DWord"
       },
     },
-    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -Name EnableLUA'. It must return '1'.",
+    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System -Name EnableLUA'. It must return '1'.",
     caution: "A system restart is required for User Account Control to take full effect across all processes."
   },
   "applocker_absent": {
@@ -429,17 +429,17 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Press Win + R, type 'wf.msc' (Windows Firewall with Advanced Security) and press Enter.", "Click Inbound Rules, locate 'File and Printer Sharing (SMB-In)', and restrict the Remote IP Address scope to approved admin workstations only.", "Alternatively, disable client auto-shares via the registry command below."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters' -Name 'AutoShareWks' -Value 0 -Type DWord; Restart-Service LanmanServer -Force"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters' -Name 'AutoShareWks' -Value 0 -Type DWord; Restart-Service LanmanServer -Force"
       },
       win10: {
         label: "Windows 10",
         gui: ["Open Windows Defender Firewall with Advanced Security ('wf.msc').", "Scope Inbound SMB (TCP port 445) rules to management IP subnets only.", "To disable auto-shares completely on workstations, run the PowerShell command below."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters' -Name 'AutoShareWks' -Value 0 -Type DWord; Restart-Service LanmanServer -Force"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters' -Name 'AutoShareWks' -Value 0 -Type DWord; Restart-Service LanmanServer -Force"
       },
       server: {
         label: "Windows Server",
         gui: ["On servers, administrative shares are commonly used by backup and deployment agents.", "Best practice is to restrict inbound SMB (Port 445) to dedicated management IPs in Windows Firewall.", "If policy requires disabling server auto-shares completely, apply the AutoShareServer registry key."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters' -Name 'AutoShareServer' -Value 0 -Type DWord; Restart-Service LanmanServer -Force"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters' -Name 'AutoShareServer' -Value 0 -Type DWord; Restart-Service LanmanServer -Force"
       },
     },
     verify: "Run 'Get-SmbShare' in PowerShell. Administrative shares C$ and ADMIN$ should be removed or inaccessible from unapproved hosts.",
@@ -452,20 +452,20 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Open Settings (Win + I) > Privacy & security > Windows Security > Device security.", "Click 'Core isolation details'.", "Locate 'Local Security Authority protection' and toggle it to ON.", "Restart the computer when prompted."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RunAsPPL' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa' -Name 'RunAsPPL' -Value 1 -Type DWord"
       },
       win10: {
         label: "Windows 10",
-        gui: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to 'HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa'.", "Right-click Lsa > New > DWORD (32-bit) Value, name it 'RunAsPPL' and set value to '1'.", "Restart the computer."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RunAsPPL' -Value 1 -Type DWord"
+        gui: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to 'HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Lsa'.", "Right-click Lsa > New > DWORD (32-bit) Value, name it 'RunAsPPL' and set value to '1'.", "Restart the computer."],
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa' -Name 'RunAsPPL' -Value 1 -Type DWord"
       },
       server: {
         label: "Windows Server",
         gui: ["Open 'gpedit.msc' (or Group Policy Management Console).", "Navigate to Computer Configuration > Administrative Templates > System > Local Security Authority.", "Open 'Configures LSASS to run as a protected process', set to Enabled, and choose 'Enabled without UEFI lock' or 'Enabled with UEFI lock'.", "Restart the server during a scheduled maintenance window."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RunAsPPL' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa' -Name 'RunAsPPL' -Value 1 -Type DWord"
       },
     },
-    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa -Name RunAsPPL' in PowerShell. It should return '1' or '2'. Check Event ID 3065 in Microsoft-Windows-CodeIntegrity/Operational.",
+    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa -Name RunAsPPL' in PowerShell. It should return '1' or '2'. Check Event ID 3065 in Microsoft-Windows-CodeIntegrity/Operational.",
     caution: "Requires a system reboot. Verify that custom third-party smart card or biometric credential providers are digitally signed and compatible."
   },
   "guest_account_active": {
@@ -562,25 +562,25 @@ export const MANUAL_FIX_GUIDES = {
   },
   "wdigest_enabled": {
     summary: "Disable WDigest cleartext credential caching to prevent attackers from reading plaintext passwords out of memory.",
-    steps: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to: HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\SecurityProviders\WDigest.", "Double-click 'UseLogonCredential' and set its value to '0' (or delete the DWORD).", "Click OK."],
+    steps: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to: HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest.", "Double-click 'UseLogonCredential' and set its value to '0' (or delete the DWORD).", "Click OK."],
     tabs: {
       win11: {
         label: "Windows 11",
-        gui: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to: HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\SecurityProviders\WDigest.", "Double-click 'UseLogonCredential' and set its value to '0' (or delete the DWORD).", "Click OK."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest' -Name 'UseLogonCredential' -Value 0 -Type DWord"
+        gui: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to: HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest.", "Double-click 'UseLogonCredential' and set its value to '0' (or delete the DWORD).", "Click OK."],
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' -Name 'UseLogonCredential' -Value 0 -Type DWord"
       },
       win10: {
         label: "Windows 10",
-        gui: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to: HKLM\System\CurrentControlSet\Control\SecurityProviders\WDigest.", "Set DWORD 'UseLogonCredential' to 0.", "Click OK."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest' -Name 'UseLogonCredential' -Value 0 -Type DWord"
+        gui: ["Press Win + R, type 'regedit' and press Enter.", "Navigate to: HKLM\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest.", "Set DWORD 'UseLogonCredential' to 0.", "Click OK."],
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' -Name 'UseLogonCredential' -Value 0 -Type DWord"
       },
       server: {
         label: "Windows Server",
         gui: ["Open 'gpedit.msc' or Domain Group Policy.", "Navigate to Computer Configuration > Administrative Templates > System > Credentials Delegation.", "Or apply the registry setting directly using the CLI command below."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest' -Name 'UseLogonCredential' -Value 0 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' -Name 'UseLogonCredential' -Value 0 -Type DWord"
       },
     },
-    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest -Name UseLogonCredential'. It must return '0'.",
+    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest -Name UseLogonCredential'. It must return '0'.",
     caution: "Currently logged-in users must sign out and sign back in to purge existing plaintext credentials from LSASS memory."
   },
   "laps_absent": {
@@ -590,12 +590,12 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Windows 11 (22H2+) includes native Windows LAPS built into the OS!", "Press Win + R, type 'gpedit.msc' > Computer Configuration > Administrative Templates > System > LAPS.", "Enable 'Configure password backup directory' and select 'Microsoft Entra ID' or 'Active Directory'.", "Configure password complexity and age requirements."],
-        cli: "Get-Item C:\Windows\System32\Laps.dll -ErrorAction SilentlyContinue"
+        cli: "Get-Item C:\\Windows\\System32\\Laps.dll -ErrorAction SilentlyContinue"
       },
       win10: {
         label: "Windows 10",
         gui: ["On updated Windows 10 (April 2023 update or later), native Windows LAPS is installed.", "For older builds, download and install the Microsoft LAPS MSI package from Microsoft Download Center.", "Configure policy via 'gpedit.msc' under System > LAPS."],
-        cli: "Get-Item C:\Windows\System32\Laps.dll -ErrorAction SilentlyContinue"
+        cli: "Get-Item C:\\Windows\\System32\\Laps.dll -ErrorAction SilentlyContinue"
       },
       server: {
         label: "Windows Server",
@@ -603,7 +603,7 @@ export const MANUAL_FIX_GUIDES = {
         cli: "Get-Command *Laps* -ErrorAction SilentlyContinue"
       },
     },
-    verify: "Inspect 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\LAPS\Config' or check Active Directory computer object for the msLAPS-Password attribute.",
+    verify: "Inspect 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\LAPS\\Config' or check Active Directory computer object for the msLAPS-Password attribute.",
     caution: "Requires directory permissions and schema support so workstations can securely escrow random passwords into Active Directory or Entra ID."
   },
   "nla_disabled": {
@@ -613,20 +613,20 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Press Win + R, type 'sysdm.cpl' and press Enter.", "Select the 'Remote' tab.", "Under Remote Desktop, check the box: 'Allow remote connections only with Network Level Authentication (recommended)'.", "Click Apply > OK."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' -Name 'UserAuthentication' -Value 1 -Type DWord"
       },
       win10: {
         label: "Windows 10",
         gui: ["Open Settings (Win + I) > System > Remote Desktop > Click 'Advanced settings'.", "Check the box: 'Require computers to use Network Level Authentication to connect'.", "Return to Settings."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' -Name 'UserAuthentication' -Value 1 -Type DWord"
       },
       server: {
         label: "Windows Server",
         gui: ["Server Manager > Local Server > Click on Remote Desktop setting.", "In System Properties, ensure 'Allow connections only from computers running Remote Desktop with Network Level Authentication' is checked.", "Click OK."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' -Name 'UserAuthentication' -Value 1 -Type DWord"
       },
     },
-    verify: "Run 'Get-ItemPropertyValue -Path \"HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp\" -Name UserAuthentication'. It must return '1'.",
+    verify: "Run 'Get-ItemPropertyValue -Path \"HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp\" -Name UserAuthentication'. It must return '1'.",
     caution: "Pre-NLA legacy remote desktop clients will no longer be able to establish connections."
   },
   "always_install_elevated": {
@@ -636,20 +636,20 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Press Win + R, type 'gpedit.msc' and press Enter.", "Navigate to: Computer Configuration > Administrative Templates > Windows Components > Windows Installer.", "Double-click 'Always install with elevated privileges' and set it to 'Disabled'.", "Repeat the step under User Configuration > Administrative Templates > Windows Components > Windows Installer."],
-        cli: "Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue"
+        cli: "Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue"
       },
       win10: {
         label: "Windows 10",
         gui: ["Open 'gpedit.msc'.", "Go to Computer Configuration & User Configuration > Admin Templates > Windows Components > Windows Installer.", "Set 'Always install with elevated privileges' to Disabled in both locations.", "Run 'gpupdate /force'."],
-        cli: "Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue"
+        cli: "Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue"
       },
       server: {
         label: "Windows Server",
         gui: ["Open Group Policy Management Console or 'gpedit.msc'.", "Set 'Always install with elevated privileges' to Disabled under both Computer Configuration and User Configuration.", "Run the CLI cleanup command to purge registry values."],
-        cli: "Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue"
+        cli: "Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer' -Name 'AlwaysInstallElevated' -ErrorAction SilentlyContinue"
       },
     },
-    verify: "Run 'Get-ItemProperty -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer -Name AlwaysInstallElevated -ErrorAction SilentlyContinue'. It must return null or 0.",
+    verify: "Run 'Get-ItemProperty -Path HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer -Name AlwaysInstallElevated -ErrorAction SilentlyContinue'. It must return null or 0.",
     caution: "Standard users will require administrator elevation or an automated software distribution tool to install system software."
   },
   "vulnerable_driver_blocklist_enabled": {
@@ -659,20 +659,20 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Open Settings (Win + I) > Privacy & security > Windows Security > Device security.", "Click 'Core isolation details'.", "Locate 'Microsoft Vulnerable Driver Blocklist' and toggle it to ON.", "Restart the computer when prompted."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config' -Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CI\\Config' -Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord"
       },
       win10: {
         label: "Windows 10",
         gui: ["Ensure Windows 10 is updated with KB5018410 or newer.", "Open elevated PowerShell and run the CLI fix command below to enable blocklist enforcement.", "Restart the computer."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config' -Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CI\\Config' -Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord"
       },
       server: {
         label: "Windows Server",
         gui: ["On Windows Server 2022/2025, enable via elevated PowerShell command below.", "Alternatively, deploy a custom Windows Defender Application Control (WDAC) policy containing Microsoft's driver blocklist.", "Restart the server."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config' -Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CI\\Config' -Name 'VulnerableDriverBlocklistEnable' -Value 1 -Type DWord"
       },
     },
-    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config -Name VulnerableDriverBlocklistEnable'. It must return '1'.",
+    verify: "Run 'Get-ItemPropertyValue -Path HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CI\\Config -Name VulnerableDriverBlocklistEnable'. It must return '1'.",
     caution: "Requires a system reboot. Blocks known vulnerable third-party hardware drivers that have been weaponized by ransomware syndicates."
   },
   "hvci_enabled": {
@@ -682,20 +682,20 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Open Settings (Win + I) > Privacy & security > Windows Security > Device security.", "Click 'Core isolation details'.", "Toggle 'Memory integrity' to ON.", "Restart your PC."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' -Name 'Enabled' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity' -Name 'Enabled' -Value 1 -Type DWord"
       },
       win10: {
         label: "Windows 10",
         gui: ["Open Settings (Win + I) > Update & Security > Windows Security > Device security.", "Click 'Core isolation details'.", "Toggle 'Memory integrity' to ON.", "Restart your PC."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' -Name 'Enabled' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity' -Name 'Enabled' -Value 1 -Type DWord"
       },
       server: {
         label: "Windows Server",
         gui: ["Open 'gpedit.msc' > Computer Configuration > Administrative Templates > System > Device Guard.", "Double-click 'Turn On Virtualization Based Security', select Enabled.", "Under 'Virtualization Based Protection of Code Integrity', select 'Enabled with UEFI lock'.", "Click OK and schedule a reboot."],
-        cli: "Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' -Name 'Enabled' -Value 1 -Type DWord"
+        cli: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity' -Name 'Enabled' -Value 1 -Type DWord"
       },
     },
-    verify: "Run 'Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard | Select-Object SecurityServicesRunning'. It should include '2' (HVCI).",
+    verify: "Run 'Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\\Microsoft\\Windows\\DeviceGuard | Select-Object SecurityServicesRunning'. It should include '2' (HVCI).",
     caution: "Requires CPU virtualization (Intel VT-x / AMD-V) enabled in BIOS/UEFI. Incompatible legacy hardware drivers must be updated before Memory Integrity will turn on."
   },
   "asr_rules_configured": {
@@ -774,17 +774,17 @@ export const MANUAL_FIX_GUIDES = {
       win11: {
         label: "Windows 11",
         gui: ["Open Settings (Win + I) and select System > Remote Desktop.", "Toggle the 'Remote Desktop' switch to OFF.", "Click Confirm when asked to disable Remote Desktop."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
       },
       win10: {
         label: "Windows 10",
         gui: ["Open Settings (Win + I) and select System > Remote Desktop.", "Toggle 'Enable Remote Desktop' to OFF.", "Click Confirm in the confirmation dialog."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
       },
       server: {
         label: "Windows Server",
         gui: ["Open Server Manager > Local Server.", "Click 'Enabled' next to Remote Desktop to open System Properties.", "Select 'Don't allow remote connections to this computer' and click OK (or run 'sconfig' and choose Option 7 > D)."],
-        cli: "Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
+        cli: "Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name 'fDenyTSConnections' -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue"
       },
     },
     verify: "Run 'Test-NetConnection -ComputerName 127.0.0.1 -Port 3389' in PowerShell. 'TcpTestSucceeded' must be False.",
