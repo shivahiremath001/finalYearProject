@@ -95,6 +95,7 @@ class ConfigurationScan(Base):
     # ── PHASE 3 ACTIVE VALIDATION (MOCK ATTACKS) ──────────────────────────────
     mock_attack_vss_enum_blocked = Column(Boolean, nullable=True)
     mock_attack_mass_rename_blocked = Column(Boolean, nullable=True)
+    honeypot_triggered = Column(Boolean, default=False)
 
     # ── RISK RESULT ──────────────────────────────────────────────────────────
     risk_score = Column(Float, default=0.0)

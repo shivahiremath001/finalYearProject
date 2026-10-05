@@ -1992,6 +1992,63 @@ def run_mock_attack_mass_rename() -> bool:
     except Exception:
         return True
 
+# ── HONEYPOT MONITOR ──────────────────────────────────────────────────────────
+import ctypes
+
+HONEYPOT_TRIPPED = False
+
+class HoneyPotMonitor(threading.Thread):
+    def __init__(self):
+        super().__init__(daemon=True)
+        # Use Public Documents so it's accessible but not usually cluttered by real users
+        self.bait_dir = os.path.join(os.environ.get("PUBLIC", "C:\\Users\\Public"), "Documents")
+        self.bait_name = "!0000_financial_records.docx"
+        self.bait_file = os.path.join(self.bait_dir, self.bait_name)
+        self.original_mtime = None
+
+    def _create_bait(self):
+        try:
+            os.makedirs(self.bait_dir, exist_ok=True)
+            with open(self.bait_file, "w") as f:
+                f.write("CONFIDENTIAL FINANCIAL DATA 2026\n" * 10)
+            # Hide the file (HIDDEN=0x02, SYSTEM=0x04)
+            try:
+                ctypes.windll.kernel32.SetFileAttributesW(self.bait_file, 0x02 | 0x04)
+            except Exception:
+                pass
+            self.original_mtime = os.path.getmtime(self.bait_file)
+        except Exception:
+            pass
+
+    def run(self):
+        global HONEYPOT_TRIPPED
+        self._create_bait()
+        while True:
+            time.sleep(2)
+            try:
+                if not os.path.exists(self.bait_file):
+                    # File went missing. Renamed or deleted?
+                    renamed = False
+                    if os.path.exists(self.bait_dir):
+                        for f in os.listdir(self.bait_dir):
+                            if f.startswith("!0000_financial_records") and f != self.bait_name:
+                                renamed = True
+                                break
+                    if renamed:
+                        HONEYPOT_TRIPPED = True
+                    else:
+                        # Simply deleted by user or cleaner. Recreate silently.
+                        self._create_bait()
+                else:
+                    # File exists. Check if modified.
+                    current_mtime = os.path.getmtime(self.bait_file)
+                    if self.original_mtime is not None and current_mtime > self.original_mtime:
+                        HONEYPOT_TRIPPED = True
+            except Exception:
+                pass
+
+def check_honeypot() -> bool:
+    return HONEYPOT_TRIPPED
 
 
 # ── CHECK MANIFEST ─────────────────────────────────────────────────────────────
@@ -2062,6 +2119,11 @@ CHECKS = [
         "mock_attack_mass_rename_blocked",
         "Running Mock Attack: Mass File Rename...",
         run_mock_attack_mass_rename,
+    ),
+    (
+        "honeypot_triggered",
+        "Checking Honeypot Integrity...",
+        check_honeypot,
     ),
 ]
 
@@ -3380,6 +3442,7 @@ class MonitorApp(tk.Tk):
 
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
 def main():
+    HoneyPotMonitor().start()
     # Register auto-start (only if .exe)
     register_auto_start()
 

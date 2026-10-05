@@ -142,6 +142,7 @@ def create_scan(
         mock_attack_mass_rename_blocked=getattr(
             d, "mock_attack_mass_rename_blocked", None
         ),
+        honeypot_triggered=getattr(d, "honeypot_triggered", False),
         risk_score=risk_score,
         risk_class=risk_class,
         flagged_parameters=",".join(

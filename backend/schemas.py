@@ -60,6 +60,7 @@ class CollectorData(BaseModel):
     # ── Phase 3 Active Validation (Mock Attacks) ─────────────────────────────
     mock_attack_vss_enum_blocked: Optional[bool] = None
     mock_attack_mass_rename_blocked: Optional[bool] = None
+    honeypot_triggered: Optional[bool] = False
 
 
 class IngestRequest(BaseModel):

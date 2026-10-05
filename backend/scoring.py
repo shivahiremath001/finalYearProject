@@ -468,6 +468,12 @@ def score(
             params[param] = False
     asset_criticality = get_asset_criticality(asset_type)
 
+    if getattr(data, "honeypot_triggered", False):
+        flagged = {"Active Attack": ["honeypot_triggered"]}
+        mitre_hits = [{"technique_id": "T1486", "technique_name": "Data Encrypted for Impact", "tactic": "Impact"}]
+        top_contributors = [{"param": "honeypot_triggered", "severity": 5.0, "likelihood": 1.0, "contribution": 100.0, "is_failed": True, "technique_id": "T1486", "tactic": "Impact"}]
+        return (100.0, "CRITICAL", flagged, mitre_hits, asset_criticality, top_contributors)
+
     total_risk = 0.0
     has_critical_failure = False
     has_mock_attack_success = False
