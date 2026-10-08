@@ -1,9 +1,9 @@
 <p align="center">
-  <strong>🛡 R3P — Ransomware Readiness & Risk Profiler</strong>
+  <strong>🛡 R3P — Ransomware Readiness &amp; Risk Profiler</strong>
 </p>
 
 <p align="center">
-  <em>An intelligent, agent-based platform for continuous ransomware vulnerability assessment, explainable risk scoring, active validation, and automated remediation of Windows endpoints.</em>
+  <em>An intelligent, agent-based platform for continuous ransomware vulnerability assessment, explainable risk scoring, active validation, deception-based attack detection, and automated remediation of Windows endpoints.</em>
 </p>
 
 <p align="center">
@@ -17,9 +17,9 @@
 ---
 
 > **Looking for deep academic documentation, formulas, and viva defense Q&A?**  
-> - 📖 **[README_DEEP.md](README_DEEP.md)** — Exhaustive architecture, mathematical formulations, anomaly statistics, and parameter matrix.  
+> - 📖 **[README_DEEP.md](README_DEEP.md)** — Exhaustive architecture, mathematical formulations, anomaly statistics, honeytoken design, and parameter matrix.  
 > - 🎓 **[docs/VIVA_NOTES.md](docs/VIVA_NOTES.md)** — Presentation defense guide, examiner questions, and project limitations.  
-> - 📝 **[CHANGELOG_R3P.md](CHANGELOG_R3P.md)** — Step-by-step engineering changelog for T1–T5 and beyond.
+> - 📝 **[CHANGELOG_R3P.md](CHANGELOG_R3P.md)** — Step-by-step engineering changelog for T1–T6 and beyond.
 
 ---
 
@@ -27,7 +27,9 @@
 
 **R3P** is a modern client-server platform designed to continuously assess the ransomware resilience of Windows endpoints. While traditional vulnerability scanners look for known software CVEs, R3P actively audits **configuration drift** and **security posture**—the settings that determine whether ransomware can execute, spread laterally, steal credentials, and destroy recovery backups.
 
-R3P also incorporates **Active Behavioral Validation**: safe, non-destructive mock ransomware simulations (such as VSS shadow copy enumeration and dual-probe rapid mass-file renaming targeting protected folders) to verify whether local endpoint protection (EDR/AV, Windows Defender Controlled Folder Access) actively intercepts and halts ransomware behavior in real time.
+R3P also incorporates:
+- **Active Behavioral Validation**: safe, non-destructive mock ransomware simulations (VSS shadow copy enumeration and dual-probe rapid mass-file renaming targeting protected folders) to verify whether local endpoint protection (EDR/AV, Windows Defender Controlled Folder Access) actively intercepts and halts ransomware behavior in real time.
+- **Deception Technology (Honeytoken Canary Subsystem)**: a background filesystem canary trap that deploys a hidden bait file (`!0000_financial_records.docx`) in `C:\Users\Public\Documents`. Any modification or renaming of this canary file by an unauthorized process triggers an immediate `CRITICAL` alert (100/100 risk score) surfaced to the dashboard, flagging real attacker presence distinct from misconfiguration risk.
 
 ---
 
@@ -43,6 +45,7 @@ R3P also incorporates **Active Behavioral Validation**: safe, non-destructive mo
 - 🚨 **Statistical Posture Drift Detection:** Rolling Z-score anomaly detector with variance floor ($\sigma_{eff} = \max(\sigma, 1.0)$) and remediation drop suppression.
 - ⏱️ **Automatic Agent Offline Detection:** Background server daemon monitoring heartbeat timestamps (`last_seen > 150s`) to mark disconnected nodes.
 - ⚡ **Controlled Remote Remediation:** Admin-confirmed fixes use server and agent allowlists; the agent rescans immediately afterward so the dashboard can verify the observed configuration.
+- 🍯 **Deception Technology — Honeytoken Canary Subsystem (MITRE T1486/T1491):** Hidden bait file deployed in `C:\Users\Public\Documents`; a daemon thread polls integrity every 2s. Unauthorised rename triggers `honeypot_triggered=true`, bypassing weighted scoring and instantly setting risk to **100/100 CRITICAL** with a dedicated `Active Attack` kill-chain phase in the dashboard.
 - 🧭 **Multi-OS Guided Manual Remediation:** Comprehensive, tabbed remediation guides covering **Windows 11, Windows 10, and Windows Server** across all 27 findings with step-by-step GUI instructions, copy-paste PowerShell commands with one-click clipboard copying, post-fix verification, and operational cautions.
 - 🔬 **Sensitivity & Validation Benchmark Suite:** Monte Carlo weight perturbation analysis and synthetic archetype validation (`analysis/`).
 - 🌐 **Real-Time Fleet Dashboard:** React 18 single-page application with live WebSocket event streaming, risk analytics, and network topology visualization.
@@ -65,10 +68,11 @@ If agents are distributed as compiled executables, rebuild the agent from the up
 
 ## Tech Stack
 
-- **Agent:** Python 3.10+ (Win32 APIs, WMI, PowerShell subsystem, PyInstaller)
+- **Agent:** Python 3.10+ (Win32 APIs, WMI, PowerShell subsystem, ctypes, pystray, PyInstaller)
 - **Backend:** FastAPI, SQLAlchemy, SQLite (WAL mode), Pydantic, WebSockets
 - **Frontend:** React 18, Vite, Lucide-React, Chart.js
 - **Analysis & Testing:** PyTest, Pandas, Matplotlib, Scipy, Tabulate
+- **Deployment:** PyInstaller (standalone `.exe`), Ngrok (public tunnel), Docker Compose
 
 ---
 
@@ -101,13 +105,82 @@ python collector.py
 
 ---
 
-### 2. Docker Compose Deployment
+### 2. One-Click Local Network Start (Same Wi-Fi)
+
+```powershell
+# Right-click → Run as Administrator:
+run_local_wifi.bat
+```
+Detects your host IPv4, opens firewall port 8000, and starts both backend and frontend servers.  
+Connect agent machines on the same Wi-Fi using: `http://<HOST_IP>:8000`
+
+---
+
+### 3. Public Internet / Remote Deployment (Ngrok Tunnel)
+
+```powershell
+# Starts backend, frontend, and Ngrok tunnel:
+run_project.bat
+```
+* Public Ngrok URL: `https://sleep-abnormal-sputter.ngrok-free.dev` (routed to backend port 8000)
+* Agent on remote machines uses this URL stored in `r3p_server.txt`.
+
+---
+
+### 4. Build Standalone Agent Executable
+
+To build a standalone `R3P_Agent.exe` (no Python required on target machine):
+
+```powershell
+# Double-click or run from project folder:
+build_collector.bat
+```
+Output: `dist\R3P_Agent.exe`
+
+**Deploy to other machines:**
+1. Copy `dist\R3P_Agent.exe` (and optionally `r3p_server.txt`) to the target PC.
+2. Right-click `R3P_Agent.exe` → **Run as Administrator**.
+3. On first launch without `r3p_server.txt`, a setup dialog prompts for the server IP or Ngrok URL, which is saved automatically.
+
+#### Optional: Auto-Start on Boot (Target Machine)
+```powershell
+# On target machine, right-click → Run as Administrator:
+setup_agent.bat
+```
+Registers `R3P_Agent.exe` as a Windows Scheduled Task that launches automatically on user logon with highest privileges.
+
+---
+
+### 5. Docker Compose Deployment
 
 ```powershell
 # Start frontend and backend in isolated containers
 docker-compose up -d --build
 ```
 * Dashboard: `http://localhost:5173` | API: `http://localhost:8000`
+
+---
+
+## Agent Configuration Files
+
+The agent reads two configuration files located **in the same folder as the executable**:
+
+| File | Purpose | Behavior |
+|---|---|---|
+| `r3p_server.txt` | Stores the server URL/IP address | Created on first run via setup dialog. Delete to reset and re-prompt. |
+| `agent_config.json` | Optional override: `api_key`, `scan_interval_seconds`, `command_poll_enabled`, `asset_type` | Defaults used if file absent. |
+
+---
+
+## Deployment Workflow Summary
+
+| Step | File | Action |
+|---|---|---|
+| **1a. Start Server (LAN)** | `run_local_wifi.bat` | Starts backend + frontend on local Wi-Fi |
+| **1b. Start Server (Internet)** | `run_project.bat` | Starts backend + frontend + Ngrok tunnel |
+| **2. Build Agent EXE** | `build_collector.bat` | Compiles `collector.py` → `dist\R3P_Agent.exe` |
+| **3. Deploy to Endpoint** | Copy `R3P_Agent.exe` + `r3p_server.txt` | Run as Administrator on target machine |
+| **4. (Optional) Auto-Start** | `setup_agent.bat` | Registers agent as Windows Scheduled Task on boot |
 
 ---
 

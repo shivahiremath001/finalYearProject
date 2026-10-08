@@ -1,5 +1,6 @@
 @echo off
 setlocal
+cd /d "%~dp0"
 title R3P Agent - Build Script
 
 echo ============================================================
@@ -20,6 +21,9 @@ if errorlevel 1 (
 )
 echo       Done.
 echo.
+
+REM Stop any running agent instance that might lock the executable
+taskkill /F /IM R3P_Agent.exe /T 2>nul
 
 REM ── Step 2: Build the .exe ────────────────────────────────────
 echo [2/3] Building R3P_Agent.exe (this may take 30-60 seconds)...
