@@ -13,6 +13,7 @@ class MachineRegistry(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     hostname = Column(String, unique=True, index=True, nullable=False)
+    custom_name = Column(String, nullable=True)
     ip_address = Column(String, nullable=False)
     mac_address = Column(String, nullable=True, index=True)
     machine_guid = Column(String, nullable=True, index=True)
@@ -23,6 +24,9 @@ class MachineRegistry(Base):
     )
     last_risk_score = Column(Float, default=0.0)
     last_risk_class = Column(String, default="UNKNOWN")
+    active_defense_vss_enum = Column(Boolean, nullable=True)
+    active_defense_mass_rename = Column(Boolean, nullable=True)
+    active_defense_honeypot = Column(Boolean, nullable=True)
     asset_criticality = Column(Float, default=1.0)
     anomaly_streak = Column(Integer, default=0)  # Consecutive anomaly count
     status = Column(String, default="ONLINE")  # ONLINE | OFFLINE

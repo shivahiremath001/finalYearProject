@@ -114,7 +114,7 @@ Ransomware accounts for over **$57 billion in global damages annually** (Cyberse
 - ✅ **Active Behavioral Probes:** Non-destructive read-only VSS enumeration and temporary-file renaming probes; results describe only whether those exact actions were allowed.
 - ✅ **Normalized Risk Scoring:** Multi-variable mathematical formulation normalizing risk to a 0.0–100.0 scale.
 - ✅ **Contextual Asset Weighting:** Dynamic weight adjustment based on machine role (`Workstation` 1.0x, `Server` 1.3x, `Domain Controller` 1.6x).
-- ✅ **Failsafe Severity Escalation:** Any single Weight 5 parameter failure raises the classification to at least `HIGH RISK`; a successful mock attack sets the effective numeric score to at least `75/100` and classifies the endpoint as `CRITICAL`.
+- ✅ **Failsafe Severity Escalation:** Any single Weight 5 parameter failure raises the classification to at least `HIGH RISK`. Active Defenses are tracked separately alongside the posture score to give true behavioral insight.
 - ✅ **Statistical Anomaly Detection:** Rolling Z-score computation over a sliding window ($N=10$) flagging posture drift ($|z| > 2.0$).
 - ✅ **MITRE ATT&CK Mapping:** Explicit cross-referencing of every check against official MITRE ATT&CK Enterprise v15 technique IDs.
 - ✅ **Controlled Remediation Protocol:** Admin-confirmed remote execution of allowlisted PowerShell actions, followed by an immediate verification scan.
@@ -338,7 +338,7 @@ Unlike passive audit tools that rely solely on reading static registry keys (whi
      - Evaluates whether behavioral EDR heuristics intercept and throttle high-velocity file modifications across the system.
    - **Verdict Evaluation:**
      - If either Probe 1 is blocked by CFA/EDR or Probe 2 is throttled/halted, the attack is marked **BLOCKED (`Safe`)**.
-     - If both probes execute unhindered without defensive intervention, the attack is marked **SUCCEEDED (`Vulnerable`)**, indicating the host lacks runtime ransomware containment and escalating the endpoint risk score to at least 75/100.
+     - If both probes execute unhindered without defensive intervention, the attack is marked **SUCCEEDED (`Vulnerable`)**, indicating the host lacks runtime ransomware containment. These results are shown independently as Active Defense Status badges (🍯 and 🛡️) in the UI.
 
 **Demo preparation:** Use a disposable Windows 10/11 VM, keep the intended Defender/EDR policy enabled, run the collector elevated, and take a VM snapshot before testing. When testing Controlled Folder Access, enable it via elevated PowerShell (`Set-MpPreference -EnableControlledFolderAccess Enabled`). For predictable fleet simulations without altering host systems, run `python demo_collector.py`.
 
@@ -608,11 +608,6 @@ $$\text{Risk}_{max} = \sum_{i=1}^{n} \left[ 1 \cdot S(p_i) \cdot L(p_i) \cdot 1.
 The **Base Normalized Risk Score** ($R_{base}$) is:
 $$R_{base} = \min \left( 100.0, \left( \frac{\text{Risk}_{raw}}{\text{Risk}_{max}} \right) \times 100 \right)$$
 
-The effective score shown in the fleet and endpoint views applies the active-validation floor:
-
-$$R_{effective} = \begin{cases} \max(R_{base}, 75.0) & \text{if either mock attack succeeds} \\ R_{base} & \text{otherwise} \end{cases}$$
-
-Thus a successful mock attack is shown as at least `75/100` and `CRITICAL`, avoiding a low numeric score paired with a critical label. Per-parameter contributions continue to explain the base weighted findings.
 
 ### Severity, Likelihood, & Asset Criticality Weights
 
@@ -718,10 +713,10 @@ A mathematical limitation of weighted averages is that a machine could pass 26 m
 To eliminate false negatives, R3P applies a **Critical Escalation Rule**:
 
 $$\text{Category} = \begin{cases} 
-\text{CRITICAL} & \text{if } R_{effective} \ge 75.0 \\
-\text{HIGH RISK} & \text{if } (50.0 \le R_{effective} < 75.0) \text{ OR } \exists p_i \text{ s.t. } f(p_i)=1 \land S(p_i)=5.0 \\
-\text{LOW RISK} & \text{if } 25.0 \le R_{effective} < 50.0 \\
-\text{SAFE} & \text{if } R_{effective} < 25.0 \text{ AND } \forall p_i, S(p_i) < 5.0
+\text{CRITICAL} & \text{if } R_{base} \ge 75.0 \\
+\text{HIGH RISK} & \text{if } (50.0 \le R_{base} < 75.0) \text{ OR } \exists p_i \text{ s.t. } f(p_i)=1 \land S(p_i)=5.0 \\
+\text{LOW RISK} & \text{if } 25.0 \le R_{base} < 50.0 \\
+\text{SAFE} & \text{if } R_{base} < 25.0 \text{ AND } \forall p_i, S(p_i) < 5.0
 \end{cases}$$
 
 ### Step-by-Step Mathematical Calculation Example
@@ -736,11 +731,11 @@ Assume a host acting as a **Domain Controller** ($C_{asset} = 1.6$) has the foll
    - $\text{Item}_2 (\text{lsass}) = 1 \times 5.0 \times 0.7 \times 1.6 = 5.60$
    - $\text{Risk}_{raw} = 5.76 + 5.60 = 11.36$
 2. **Compute Baseline Maximum Risk:**
-   - Assume $\text{Risk}_{max} = 75.0$ across all baseline parameters.
+   - Assume $\text{Risk}_{max} = 70.3$ across all baseline parameters.
 3. **Calculate Normalized Score:**
-   - $R = (11.36 / 75.0) \times 100 = 15.14\%$
+   - $R = (11.36 / 70.3) \times 100 = 16.16\%$
 4. **Apply Classification Rules:**
-   - Raw score $15.14\%$ is mathematically $< 25.0$ (`SAFE`).
+   - Raw score $16.16\%$ is mathematically $< 25.0$ (`SAFE`).
    - *Escalation Test:* `lsass_protection_off` has $S = 5.0$ (Critical) and $f = 1$.
    - **Final Result:** The score is mathematically forced from `SAFE` to **`HIGH RISK`**, preventing a false negative.
 
@@ -1086,7 +1081,7 @@ pytest backend/tests/ -v
 > **Answer:** "Active Validation does not merely read static registry toggles; it executes real attack behavior to verify runtime defensive interception. Because Windows Defender excludes `%TEMP%` from Controlled Folder Access, testing solely in temporary folders creates false negatives. R3P's **Dual-Probe Engine** combines:
 > 1. **Probe 1 (Protected Library Attack — MITRE ATT&CK T1486):** An unapproved process safely attempts to create and rename a dummy file with a `.locked` extension in the user's `Documents` library. If Windows Defender Controlled Folder Access or an EDR is active, the OS intercepts the file modification at the kernel mini-filter level, logs Event ID 1123, and blocks execution (`Safe`).
 > 2. **Probe 2 (Rapid Mass-Rename Burst):** Rapidly iterates over 100 files in temp space to evaluate behavioral heuristic throttling.
-> If either probe is intercepted, the endpoint proves live containment. If both succeed unhindered, the system is exposed and score escalates to $\ge 75/100$."
+> If either probe is intercepted, the endpoint proves live containment. If both succeed unhindered, the system is exposed and Active Defense status turns red."
 
 ### Q8: How does your remediation architecture accommodate heterogeneous Windows environments (Windows 10, 11, and Windows Server)?
 > **Answer:** "Administrative workflows differ sharply across Windows generations—Windows 11 utilizes the modernized Settings app and Core Isolation center, Windows 10 relies on legacy Control Panel applets, and Windows Server utilizes Server Manager and Group Policy Management (`gpmc.msc`). R3P provides a synchronized **Multi-OS Guided Remediation Engine** across both the React dashboard and desktop agent GUI. Every finding features dedicated OS tabs (Win 11, Win 10, Server) with version-specific GUI click paths, hardened PowerShell CLI commands with one-click clipboard copying, post-fix verification checks, and operational cautions (reboots, service dependencies, domain GPO overrides)."

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { 
   Shield, ShieldAlert, TriangleAlert, Info, ShieldCheck, Monitor, Clock, Settings, 
   CheckCircle2, XCircle, TrendingUp, TrendingDown, Minus, Circle, User, Zap, X, 
-  Crosshair, Activity, Map, FileKey, LogOut, Download
+  Crosshair, Activity, Map, FileKey, LogOut, Download, Edit2, Trash2, Key, Save
 } from 'lucide-react'
 import './App.css'
 
@@ -292,7 +292,7 @@ function LoginPage({ onLogin }) {
 }
 
 // ── Machine Detail Panel ──────────────────────────────────────────────────────
-function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy }) {
+function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy, onUpdateMachine, onRemoveMachine }) {
   const [detail, setDetail] = useState(null)       // from /machines/{h}/detail
   const [cmdHistory, setCmdHistory] = useState([])
   const [availCmds, setAvailCmds] = useState([])
@@ -313,6 +313,10 @@ function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy 
   const lastSeen = live?.timestamp ?? machine.last_seen
   const offline = isStale(lastSeen)
   const anomaly = live?.anomaly ?? detail?.anomaly
+  
+  const hp = live?.active_defense_honeypot ?? detail?.active_defense_honeypot ?? machine.active_defense_honeypot
+  const vss = live?.active_defense_vss_enum ?? detail?.active_defense_vss_enum ?? machine.active_defense_vss_enum
+  const rename = live?.active_defense_mass_rename ?? detail?.active_defense_mass_rename ?? machine.active_defense_mass_rename
 
   // Load DB detail + available commands + history
   useEffect(() => {
@@ -344,6 +348,50 @@ function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy 
       }
     }).finally(() => setLoading(false))
   }, [hostname, token, histKey])
+
+  const [isEditingName, setIsEditingName] = useState(false)
+  const [customNameInput, setCustomNameInput] = useState(machine.custom_name || '')
+
+  const handleSaveName = async () => {
+    try {
+      const res = await apiFetch(`/machines/${encodeURIComponent(hostname)}/custom_name`, {
+        method: 'PUT', body: JSON.stringify({ custom_name: customNameInput }),
+      }, token)
+      if (res.ok) {
+        setIsEditingName(false)
+        if (onUpdateMachine) onUpdateMachine(hostname, { custom_name: customNameInput })
+      } else {
+        alert('Failed to update name')
+      }
+    } catch {
+      alert('Error updating name')
+    }
+  }
+
+  const handleRemove = async () => {
+    const confirmName = prompt(`Are you absolutely sure you want to delete this system? All data will be lost.\n\nPlease type "${hostname}" to confirm:`)
+    if (confirmName !== hostname) {
+      if (confirmName !== null) alert('Hostname did not match. Deletion cancelled.')
+      return
+    }
+
+    const pwd = prompt('Enter admin password to proceed with deletion:')
+    if (!pwd) return
+    try {
+      const res = await apiFetch(`/machines/${encodeURIComponent(hostname)}/remove`, {
+        method: 'POST', body: JSON.stringify({ password: pwd }),
+      }, token)
+      if (res.ok) {
+        onClose()
+        if (onRemoveMachine) onRemoveMachine(hostname)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert('Failed to remove: ' + (err.detail || ''))
+      }
+    } catch {
+      alert('Error removing machine')
+    }
+  }
 
   const handleFixClick = (paramKey) => {
     const cmd = availCmds.find(c => c.param_key === paramKey)
@@ -390,9 +438,12 @@ function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy 
   }
 
   const statusIcon = { pending: <Clock size={14} />, executing: <Settings size={14} />, done: <CheckCircle2 size={14} />, failed: <XCircle size={14} /> }
-  const trendIcon = trend === 'up' ? <TrendingUp size={14} /> : trend === 'down' ? <TrendingDown size={14} /> : <Minus size={14} />
-  const trendClass = trend === 'up' ? 'trend-up' : trend === 'down' ? 'trend-down' : 'trend-stable'
-  const totalFlagged = Object.values(flagged).reduce((n, arr) => n + arr.length, 0)
+  const trendIcon = trend === 'up' ? <TrendingUp size={14} color="var(--critical)" /> : trend === 'down' ? <TrendingDown size={14} color="var(--safe)" /> : <Minus size={14} color="var(--subtle)" />
+  const displayPhases = Object.entries(flagged).filter(([phase]) => 
+    !phase.toLowerCase().includes('active validation') && 
+    !phase.toLowerCase().includes('mock attack')
+  )
+  const totalFlagged = displayPhases.reduce((n, [, arr]) => n + arr.length, 0)
 
   return (
     <div className="detail-overlay" onClick={onClose}>
@@ -408,21 +459,52 @@ function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy 
         {/* Header */}
         <div className="detail-header">
           <div>
-            <h2 className="detail-hostname">{hostname}</h2>
-            <p className="detail-meta">
-              <span>IP: <strong>{machine.ip_address}</strong></span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {isEditingName ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="text" className="search-input" value={customNameInput} onChange={e => setCustomNameInput(e.target.value)} placeholder="Custom Name..." style={{ width: 200, padding: '6px 12px' }} />
+                  <button className="btn btn-primary btn-sm" onClick={handleSaveName}><Save size={14} /></button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setIsEditingName(false)}><X size={14} /></button>
+                </div>
+              ) : (
+                <>
+                  <h2 className="detail-hostname">
+                    {machine.custom_name ? machine.custom_name : hostname}
+                    {machine.custom_name && <span style={{ fontSize: 13, color: 'var(--subtle)', marginLeft: 8 }}>({hostname})</span>}
+                  </h2>
+                  <button className="btn-icon" onClick={() => { setCustomNameInput(machine.custom_name || ''); setIsEditingName(true); }} title="Set custom name"><Edit2 size={16}/></button>
+                </>
+              )}
+            </div>
+            <div className="detail-capsules-row">
+              {machine.ip_address && (
+                <div className="meta-capsule" title={`IP Address: ${machine.ip_address}`}>
+                  <span className="meta-capsule-label">IP</span>
+                  <span className="meta-capsule-value">{machine.ip_address}</span>
+                </div>
+              )}
               {(detail?.mac_address || machine.mac_address) && (
-                <span> · MAC: <code style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{detail?.mac_address || machine.mac_address}</code></span>
+                <div className="meta-capsule" title={`Physical Address (MAC): ${detail?.mac_address || machine.mac_address}`}>
+                  <span className="meta-capsule-label">MAC</span>
+                  <span className="meta-capsule-value mono">{detail?.mac_address || machine.mac_address}</span>
+                </div>
               )}
               {(detail?.machine_guid || machine.machine_guid) && (
-                <span> · GUID: <code style={{ fontFamily: 'monospace', color: 'var(--text-secondary)', fontSize: '0.85em' }}>{detail?.machine_guid || machine.machine_guid}</code></span>
+                <div className="meta-capsule" title={`Machine GUID: ${detail?.machine_guid || machine.machine_guid}`}>
+                  <span className="meta-capsule-label">GUID</span>
+                  <span className="meta-capsule-value mono guid-val">{detail?.machine_guid || machine.machine_guid}</span>
+                </div>
               )}
-              <span> · {machine.os_version || 'Unknown OS'}</span>
-            </p>
+              <div className="meta-capsule" title={`Operating System: ${machine.os_version || 'Windows'}`}>
+                <span className="meta-capsule-label">OS</span>
+                <span className="meta-capsule-value">{machine.os_version || 'Windows'}</span>
+              </div>
+            </div>
           </div>
           <div className="detail-header-right">
             <span className={`online-dot ${offline ? 'offline' : 'online'}`} />
             <span className={offline ? 'offline-text' : 'online-text'}>{offline ? 'Offline' : 'Live'}</span>
+            <button className="btn btn-ghost btn-sm" onClick={handleRemove} style={{ color: 'var(--critical)' }} title="Remove Machine"><Trash2 size={16}/></button>
             <button id="close-detail-btn" className="btn btn-ghost btn-sm" onClick={onClose}><X size={16} style={{marginRight: 4, verticalAlign: 'text-bottom'}} /> Close</button>
           </div>
         </div>
@@ -454,35 +536,85 @@ function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy 
 
         {/* Score + trend */}
         <div className="score-section">
-          <ScoreGauge score={score} riskClass={riskClass} />
-          <div className="score-info">
-            <div className={`risk-badge ${RISK_CLASS_COLOR[riskClass] || ''}`}>{riskClass}</div>
-            <div className="trend-row">
-              <span className={`trend-arrow ${trendClass}`}>{trendIcon}</span>
-              <span className="muted">vs previous scan</span>
-            </div>
-            <p className="score-num">{Number(score).toFixed(1)} / 100</p>
-            <p className="muted">{totalFlagged} misconfiguration{totalFlagged !== 1 ? 's' : ''} found</p>
-            {policyExceptions.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6, marginTop: 4 }}>
-                <span className="muted" style={{ fontSize: 12 }}>Policy exceptions ({policyExceptions.length})</span>
-                {policyExceptions.map(policy => (
-                  <button
-                    key={policy.id}
-                    type="button"
-                    onClick={() => onOpenPolicy(policy)}
-                    title={policy.reason || 'Open this policy exception'}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--overlay)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}
-                  >
-                    <FileKey size={13} /> {PARAM_LABELS[policy.param_key] || policy.param_key} · Policy
-                  </button>
-                ))}
+          <div className="score-main">
+            <ScoreGauge score={score} riskClass={riskClass} />
+            <div className="score-info">
+              <div className={`risk-badge ${RISK_CLASS_COLOR[riskClass] || ''}`}>{riskClass}</div>
+              <div className="trend-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+                <span className="trend-arrow">{trendIcon}</span>
+                <span className="muted">vs previous scan</span>
               </div>
-            )}
-            {detail?.scanned_at && <p className="muted">Scanned {timeSince(detail.scanned_at)}</p>}
-            {detail?.anomaly_streak > 0 && (
-              <p className="anomaly-streak-label">🔥 Posture drift streak: {detail.anomaly_streak}</p>
-            )}
+              <p className="score-num">{Number(score).toFixed(1)} / 100</p>
+              <p className="muted">{totalFlagged} misconfiguration{totalFlagged !== 1 ? 's' : ''} found</p>
+              {policyExceptions.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6, marginTop: 4 }}>
+                  <span className="muted" style={{ fontSize: 12 }}>Policy exceptions ({policyExceptions.length})</span>
+                  {policyExceptions.map(policy => (
+                    <button
+                      key={policy.id}
+                      type="button"
+                      onClick={() => onOpenPolicy(policy)}
+                      title={policy.reason || 'Open this policy exception'}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--overlay)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}
+                    >
+                      <FileKey size={13} /> {PARAM_LABELS[policy.param_key] || policy.param_key} · Policy
+                    </button>
+                  ))}
+                </div>
+              )}
+              {detail?.scanned_at && <p className="muted">Scanned {timeSince(detail.scanned_at)}</p>}
+              {detail?.anomaly_streak > 0 && (
+                <p className="anomaly-streak-label">🔥 Posture drift streak: {detail.anomaly_streak}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Active Defense Apple-Style Module beside Posture Score */}
+          <div className="defense-apple-panel">
+            <div className="defense-panel-header">
+              <span className="defense-panel-title">Active Defense Status</span>
+              <span className="defense-panel-sub">Behavioral Probes</span>
+            </div>
+            <div className="defense-capsule-list">
+              <div 
+                className={`defense-capsule ${hp === null || hp === undefined ? 'neutral' : hp ? 'danger' : 'secure'}`}
+                title={hp ? "Canary honeypot file was modified or deleted (Tampering Alert)" : "Canary honeypot file is intact and active"}
+              >
+                <div className="defense-capsule-left">
+                  <span className="defense-capsule-icon"><Crosshair size={13} /></span>
+                  <span className="defense-capsule-name">Canary Trap</span>
+                </div>
+                <span className="defense-capsule-state">
+                  {hp === null || hp === undefined ? 'N/A' : hp ? 'Tripped' : 'Intact'}
+                </span>
+              </div>
+
+              <div 
+                className={`defense-capsule ${vss === null || vss === undefined ? 'neutral' : vss ? 'secure' : 'danger'}`}
+                title={vss ? "Volume shadow copies deletion was successfully prevented by active controls" : "Shadow copy deletion attempt was allowed without blockage"}
+              >
+                <div className="defense-capsule-left">
+                  <span className="defense-capsule-icon"><Shield size={13} /></span>
+                  <span className="defense-capsule-name">VSS Defense</span>
+                </div>
+                <span className="defense-capsule-state">
+                  {vss === null || vss === undefined ? 'N/A' : vss ? 'Blocked' : 'Exposed'}
+                </span>
+              </div>
+
+              <div 
+                className={`defense-capsule ${rename === null || rename === undefined ? 'neutral' : rename ? 'secure' : 'danger'}`}
+                title={rename ? "Rapid high-frequency file rename mock attack was blocked" : "Rapid file rename mock attack was permitted without throttling"}
+              >
+                <div className="defense-capsule-left">
+                  <span className="defense-capsule-icon"><ShieldCheck size={13} /></span>
+                  <span className="defense-capsule-name">Rename Shield</span>
+                </div>
+                <span className="defense-capsule-state">
+                  {rename === null || rename === undefined ? 'N/A' : rename ? 'Blocked' : 'Exposed'}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -495,7 +627,7 @@ function MachineDetail({ machine, token, onClose, liveData, theme, onOpenPolicy 
         {!loading && totalFlagged > 0 && (
           <div className="phases-section">
             <h3 className="section-title">Misconfigurations by Kill-Chain Phase</h3>
-            {Object.entries(flagged).map(([phase, params]) => {
+            {displayPhases.map(([phase, params]) => {
               if (!params || params.length === 0) return null
               const worstSev = params.reduce((best, p) => {
                 const s = PARAM_SEVERITY[p] || 'LOW'
@@ -647,6 +779,8 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
   const [toasts, setToasts] = useState([])
   const [activeTab, setActiveTab] = useState('overview')
   const [policyTarget, setPolicyTarget] = useState(null)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [pwdForm, setPwdForm] = useState({ current: '', new: '' })
   const wsRef = useRef(null)
   const toastIdRef = useRef(0)
 
@@ -771,7 +905,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
   }
 
   const sorted = [...machines]
-    .filter(m => (m.hostname.toLowerCase().includes(searchQ.toLowerCase()) || m.ip_address.includes(searchQ) || (m.mac_address && m.mac_address.toLowerCase().includes(searchQ.toLowerCase())) || (m.machine_guid && m.machine_guid.toLowerCase().includes(searchQ.toLowerCase()))) && (!filterRisk || m.last_risk_class === filterRisk))
+    .filter(m => (m.hostname.toLowerCase().includes(searchQ.toLowerCase()) || (m.custom_name || '').toLowerCase().includes(searchQ.toLowerCase()) || m.ip_address.includes(searchQ) || (m.mac_address && m.mac_address.toLowerCase().includes(searchQ.toLowerCase())) || (m.machine_guid && m.machine_guid.toLowerCase().includes(searchQ.toLowerCase()))) && (!filterRisk || m.last_risk_class === filterRisk))
     .sort((a, b) => {
       const av = a[sortField] ?? '', bv = b[sortField] ?? ''
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1)
@@ -832,6 +966,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
               <span className="user-name">{username}</span>
               <span className="user-role">Administrator</span>
             </div>
+            <button className="btn-icon" onClick={() => setShowPasswordModal(true)} title="Change Password"><Key size={16}/></button>
             <button id="logout-btn" className="btn-icon" onClick={onLogout} title="Sign Out"><LogOut size={16}/></button>
           </div>
         </div>
@@ -923,7 +1058,7 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
                         Risk Score {sortField === 'last_risk_score' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
                       </th>
                       <th>Risk Class</th>
-                      <th>Trend</th>
+                      <th>Active Defenses</th>
                       <th className="sortable" onClick={() => toggleSort('last_seen')}>
                         Last Seen {sortField === 'last_seen' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
                       </th>
@@ -945,6 +1080,10 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
                       const lastSeen = live?.timestamp || m.last_seen
                       const offline = isStale(lastSeen)
                       const hasAnomaly = live?.anomaly?.is_anomaly
+                      
+                      const hp = live?.active_defense_honeypot ?? m.active_defense_honeypot
+                      const vss = live?.active_defense_vss_enum ?? m.active_defense_vss_enum
+                      const rename = live?.active_defense_mass_rename ?? m.active_defense_mass_rename
                       return (
                         <tr key={m.hostname}
                           className={`machine-row ${selected === m.hostname ? 'machine-row-active' : ''}`}
@@ -952,7 +1091,10 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
                           <td><span className={`row-dot ${offline ? 'offline' : 'online'}`} /></td>
                           <td className="hostname-cell">
                             <div style={{ display: 'flex', alignItems: 'center' }}>
-                              <span style={{ fontFamily: 'Roboto, sans-serif' }}>{m.hostname}</span>
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontFamily: 'Roboto, sans-serif' }}>{m.custom_name || m.hostname}</span>
+                                {m.custom_name && <span style={{ fontSize: 11, color: 'var(--subtle)', fontWeight: 'normal' }}>{m.hostname}</span>}
+                              </div>
                               {hasAnomaly && <span className="anomaly-indicator" title="Posture drift detected"><TriangleAlert size={14} color="var(--critical)" style={{marginLeft: 8}} /></span>}
                             </div>
                           </td>
@@ -976,9 +1118,27 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
                           </td>
                           <td><span className={`risk-badge-sm ${RISK_CLASS_COLOR[cls] || ''}`}>{cls}</span></td>
                           <td>
-                            {trend === 'up' ? <span className="trend-arrow trend-up"><TrendingUp size={16} /></span>
-                              : trend === 'down' ? <span className="trend-arrow trend-down"><TrendingDown size={16} /></span>
-                                : <span className="trend-arrow trend-stable"><Minus size={16} /></span>}
+                            <div className="fleet-defense-badges">
+                              {hp !== null && hp !== undefined && (
+                                <span className={`fleet-badge ${hp ? 'danger' : 'secure'}`} title={`Canary Honeypot: ${hp ? 'Tripped (Tampering Alert)' : 'Intact'}`}>
+                                  <Crosshair size={11} />
+                                  <span>{hp ? 'Tripped' : 'Intact'}</span>
+                                </span>
+                              )}
+                              {vss !== null && vss !== undefined && (
+                                <span className={`fleet-badge ${vss ? 'secure' : 'danger'}`} title={`VSS Mock Attack: ${vss ? 'Blocked (Defended)' : 'Exposed (Allowed)'}`}>
+                                  <Shield size={11} />
+                                  <span>{vss ? 'Blocked' : 'Exposed'}</span>
+                                </span>
+                              )}
+                              {rename !== null && rename !== undefined && (
+                                <span className={`fleet-badge ${rename ? 'secure' : 'danger'}`} title={`Rename Mock Attack: ${rename ? 'Blocked (Defended)' : 'Exposed (Allowed)'}`}>
+                                  <ShieldCheck size={11} />
+                                  <span>{rename ? 'Blocked' : 'Exposed'}</span>
+                                </span>
+                              )}
+                              {hp == null && vss == null && rename == null && <span className="muted">—</span>}
+                            </div>
                           </td>
                           <td className="muted">{timeSince(lastSeen)}</td>
                           <td><span className={offline ? 'offline-text' : 'online-text'}>{offline ? 'Offline' : 'Online'}</span></td>
@@ -1011,7 +1171,51 @@ function FleetOverview({ token, onLogout, username, theme, toggleTheme }) {
             setSelected(null)
             setActiveTab('policies')
           }}
+          onUpdateMachine={(host, updates) => {
+            setMachines(prev => prev.map(m => m.hostname === host ? { ...m, ...updates } : m))
+          }}
+          onRemoveMachine={(host) => {
+            setMachines(prev => prev.filter(m => m.hostname !== host))
+            setSelected(null)
+          }}
         />
+      )}
+
+      {showPasswordModal && (
+        <div className="modal-overlay" onClick={() => setShowPasswordModal(false)}>
+          <div className="confirm-dialog" onClick={e => e.stopPropagation()} style={{ textAlign: 'left', maxWidth: 400 }}>
+            <div className="detail-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+              <h2 className="detail-hostname" style={{ fontSize: 20 }}>Change Password</h2>
+            </div>
+            <div className="login-form" style={{ marginTop: 24, gap: 16 }}>
+              <div className="field">
+                <label>Current Password</label>
+                <input type="password" value={pwdForm.current} onChange={e => setPwdForm({ ...pwdForm, current: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>New Password</label>
+                <input type="password" value={pwdForm.new} onChange={e => setPwdForm({ ...pwdForm, new: e.target.value })} />
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+                <button className="btn btn-primary btn-full" onClick={async () => {
+                  if (pwdForm.new.length < 8) return alert('Password must be at least 8 characters long')
+                  try {
+                    const res = await apiFetch('/admin/change-password', { method: 'POST', body: JSON.stringify({ current_password: pwdForm.current, new_password: pwdForm.new }) }, token)
+                    if (res.ok) {
+                      addToast('success', 'Success', 'Password changed successfully')
+                      setShowPasswordModal(false)
+                      setPwdForm({ current: '', new: '' })
+                    } else {
+                      const err = await res.json().catch(() => ({}))
+                      alert('Failed: ' + (err.detail || ''))
+                    }
+                  } catch { alert('Network error') }
+                }}>Save Password</button>
+                <button className="btn btn-ghost btn-full" onClick={() => setShowPasswordModal(false)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

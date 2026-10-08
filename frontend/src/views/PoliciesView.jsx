@@ -6,10 +6,28 @@ export default function PoliciesView({ token, target, onViewSystem, onClearTarge
   const [policies, setPolicies] = useState([]);
   const [machines, setMachines] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [searchQ, setSearchQ] = useState('');
   const [newPolicy, setNewPolicy] = useState({ hostname: '', param_key: 'smb_v1_enabled', reason: '' });
   const visiblePolicies = target
     ? policies.filter(p => p.hostname === target.hostname && p.param_key === target.param_key)
     : policies;
+
+  const systemMap = {};
+  machines.forEach(m => systemMap[m.hostname] = m);
+
+  const filteredPolicies = visiblePolicies.filter(p => {
+    const m = systemMap[p.hostname] || {};
+    const cName = (m.custom_name || '').toLowerCase();
+    const hName = (p.hostname || '').toLowerCase();
+    const q = searchQ.toLowerCase();
+    return cName.includes(q) || hName.includes(q) || p.param_key.toLowerCase().includes(q);
+  });
+
+  const groupedPolicies = {};
+  filteredPolicies.forEach(p => {
+    if (!groupedPolicies[p.hostname]) groupedPolicies[p.hostname] = [];
+    groupedPolicies[p.hostname].push(p);
+  });
 
   const fetchPolicies = useCallback(async () => {
     try {
@@ -62,6 +80,7 @@ export default function PoliciesView({ token, target, onViewSystem, onClearTarge
       <div className="main-header">
         <h1 className="page-title">Policy Exceptions</h1>
         <div className="fleet-controls">
+          <input type="text" className="search-input" placeholder="Search system or parameter..." value={searchQ} onChange={e => setSearchQ(e.target.value)} />
           <button className="btn btn-primary btn-sm" onClick={() => setShowModal(true)}>
             <Plus size={16} /> Add Exception
           </button>
@@ -89,23 +108,35 @@ export default function PoliciesView({ token, target, onViewSystem, onClearTarge
             </tr>
           </thead>
           <tbody>
-            {visiblePolicies.length === 0 ? (
+            {Object.keys(groupedPolicies).length === 0 ? (
               <tr><td colSpan="5" className="empty-row">{target ? 'No matching active policy exception was found.' : 'No active policy exceptions.'}</td></tr>
-            ) : visiblePolicies.map(p => (
-              <tr key={p.id} className="machine-row">
-                <td className="hostname-cell">{p.hostname}</td>
-                <td><span className="mitre-badge" style={{ margin: 0 }}>{p.param_key}</span></td>
-                <td style={{ color: 'var(--subtle)', fontSize: 13 }}>{p.reason || 'No reason provided'}</td>
-                <td style={{ color: 'var(--subtle)', fontSize: 13 }}>{new Date(p.created_at).toLocaleString()}</td>
-                <td>
-                  <button className="btn btn-ghost btn-sm" onClick={() => onViewSystem?.(p.hostname)} style={{ marginRight: 6 }}>
-                    View system
-                  </button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(p.id)} style={{ color: 'var(--critical)' }}>
-                    Revoke
-                  </button>
-                </td>
-              </tr>
+            ) : Object.keys(groupedPolicies).map(hostname => (
+              <React.Fragment key={hostname}>
+                <tr className="group-header" style={{ background: 'var(--overlay)' }}>
+                  <td colSpan="5" style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <strong style={{ fontSize: 14 }}>{systemMap[hostname]?.custom_name || hostname}</strong>
+                      {systemMap[hostname]?.custom_name && <span style={{ fontSize: 11, color: 'var(--subtle)', marginLeft: 8, fontWeight: 'normal' }}>{hostname}</span>}
+                    </div>
+                  </td>
+                </tr>
+                {groupedPolicies[hostname].map(p => (
+                  <tr key={p.id} className="machine-row">
+                    <td className="hostname-cell" style={{ paddingLeft: 32, color: 'var(--subtle)' }}>↳</td>
+                    <td><span className="mitre-badge" style={{ margin: 0 }}>{p.param_key}</span></td>
+                    <td style={{ color: 'var(--subtle)', fontSize: 13 }}>{p.reason || 'No reason provided'}</td>
+                    <td style={{ color: 'var(--subtle)', fontSize: 13 }}>{new Date(p.created_at).toLocaleString()}</td>
+                    <td>
+                      <button className="btn btn-ghost btn-sm" onClick={() => onViewSystem?.(p.hostname)} style={{ marginRight: 6 }}>
+                        View system
+                      </button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(p.id)} style={{ color: 'var(--critical)' }}>
+                        Revoke
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -124,7 +155,7 @@ export default function PoliciesView({ token, target, onViewSystem, onClearTarge
                 <div style={{ position: 'relative' }}>
                   <select value={newPolicy.hostname} onChange={e => setNewPolicy({...newPolicy, hostname: e.target.value})} className="search-input" style={{ width: '100%', background: 'var(--overlay)', cursor: 'pointer' }}>
                     {machines.map(m => (
-                      <option key={m.hostname} value={m.hostname}>{m.hostname} ({m.ip_address}{m.mac_address ? ` · ${m.mac_address}` : ''})</option>
+                      <option key={m.hostname} value={m.hostname}>{m.custom_name ? `${m.custom_name} (${m.hostname})` : m.hostname} ({m.ip_address}{m.mac_address ? ` · ${m.mac_address}` : ''})</option>
                     ))}
                   </select>
                   <ChevronDown size={16} color="var(--subtle)" style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />

@@ -131,8 +131,8 @@ LIKELIHOOD_WEIGHTS: dict[str, float] = {
     "hvci_enabled": 0.8,
     "asr_rules_configured": 0.8,
     # Phase 3 Active Validation
-    "mock_attack_vss_enum_succeeded": 1.0,  # If it succeeded, defense absolutely failed
-    "mock_attack_mass_rename_succeeded": 1.0,  # If it succeeded, defense absolutely failed
+    "mock_attack_vss_enum_succeeded": 1.0,
+    "mock_attack_mass_rename_succeeded": 1.0,
 }
 
 # ── Dynamic Risk_max ──────────────────────────────────────────────────────────
@@ -390,12 +390,10 @@ def _translate(data: CollectorData) -> dict[str, bool]:
         # If it's None, it didn't run, so it's not a failure.
         "mock_attack_vss_enum_succeeded": getattr(
             data, "mock_attack_vss_enum_blocked", None
-        )
-        is False,
+        ) is False,
         "mock_attack_mass_rename_succeeded": getattr(
             data, "mock_attack_mass_rename_blocked", None
-        )
-        is False,
+        ) is False,
     }
 
 
@@ -468,15 +466,8 @@ def score(
             params[param] = False
     asset_criticality = get_asset_criticality(asset_type)
 
-    if getattr(data, "honeypot_triggered", False):
-        flagged = {"Active Attack": ["honeypot_triggered"]}
-        mitre_hits = [{"technique_id": "T1486", "technique_name": "Data Encrypted for Impact", "tactic": "Impact"}]
-        top_contributors = [{"param": "honeypot_triggered", "severity": 5.0, "likelihood": 1.0, "contribution": 100.0, "is_failed": True, "technique_id": "T1486", "tactic": "Impact"}]
-        return (100.0, "CRITICAL", flagged, mitre_hits, asset_criticality, top_contributors)
-
     total_risk = 0.0
     has_critical_failure = False
-    has_mock_attack_success = False
     flagged: dict[str, list[str]] = {phase: [] for phase in PHASES}
 
     # RISK_MAX is pre-computed at module load time (no hardcoded value).
@@ -495,9 +486,6 @@ def score(
 
             if severity == 5.0:
                 has_critical_failure = True
-            # Track mock-attack success for CRITICAL escalation
-            if param in ("mock_attack_vss_enum_succeeded", "mock_attack_mass_rename_succeeded"):
-                has_mock_attack_success = True
             for phase, p_list in PHASES.items():
                 if param in p_list:
                     flagged[phase].append(param)
@@ -512,13 +500,8 @@ def score(
     )
     normalized_score = min(normalized_score, 100.0)
 
-    # A successful active-validation test means an important behavioral
-    # protection did not stop the tested action. Keep the numeric score aligned
-    # with the CRITICAL label by applying the lower bound of the CRITICAL band.
-    # The ordinary weighted findings remain visible in per-parameter details.
-    if has_mock_attack_success:
-        normalized_score = max(normalized_score, 75.0)
-    elif has_critical_failure:
+    # applying the lower bound of the HIGH RISK band.
+    if has_critical_failure:
         normalized_score = max(normalized_score, 50.0)
 
     # ── Classification — matches project specification exactly ──────────────

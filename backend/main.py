@@ -583,6 +583,9 @@ def get_machine_detail(
         "score_history": score_history,
         "scanned_at": last_scan.scanned_at if last_scan else None,
         "pending_commands": len(pending_cmds),
+        "active_defense_vss_enum": machine.active_defense_vss_enum,
+        "active_defense_mass_rename": machine.active_defense_mass_rename,
+        "active_defense_honeypot": machine.active_defense_honeypot,
     }
 
 
@@ -869,3 +872,62 @@ def get_analytics_history(
 
     history = [{"date": str(r.date), "avgRisk": round(r.avg_risk, 2)} for r in results]
     return {"history": history}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW ENDPOINTS FOR CUSTOM NAME, REMOVE MACHINE, PASSWORD CHANGE
+# ─────────────────────────────────────────────────────────────────────────────
+
+from schemas import ChangePasswordRequest, VerifyPasswordRequest, CustomNameRequest
+
+@app.post("/admin/change-password")
+def change_password(
+    req: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    if not verify_password(req.current_password, current_admin.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+    
+    current_admin.hashed_password = hash_password(req.new_password)
+    db.commit()
+    return {"message": "Password changed successfully"}
+
+
+@app.put("/machines/{hostname}/custom_name")
+def update_machine_custom_name(
+    hostname: str,
+    req: CustomNameRequest,
+    db: Session = Depends(get_db),
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    machine = crud.get_machine(db, hostname)
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine not found")
+    machine.custom_name = req.custom_name if req.custom_name.strip() else None
+    db.commit()
+    return {"message": "Custom name updated", "custom_name": machine.custom_name}
+
+
+@app.post("/machines/{hostname}/remove")
+def remove_machine(
+    hostname: str,
+    req: VerifyPasswordRequest,
+    db: Session = Depends(get_db),
+    current_admin: models.AdminUser = Depends(get_current_admin),
+):
+    if not verify_password(req.password, current_admin.hashed_password):
+        raise HTTPException(status_code=401, detail="Incorrect admin password")
+    
+    machine = crud.get_machine(db, hostname)
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine not found")
+    
+    db.delete(machine)
+    db.query(models.ConfigurationScan).filter_by(hostname=hostname).delete()
+    db.query(models.RemediationCommand).filter_by(hostname=hostname).delete()
+    db.query(models.PolicyException).filter_by(hostname=hostname).delete()
+    db.commit()
+    return {"message": "Machine removed successfully"}

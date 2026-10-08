@@ -76,6 +76,13 @@ def upsert_machine(
     machine.os_version = req.os
     machine.last_risk_score = risk_score
     machine.last_risk_class = risk_class
+    
+    # Update active defense states
+    d = req.data
+    machine.active_defense_vss_enum = getattr(d, "mock_attack_vss_enum_blocked", None)
+    machine.active_defense_mass_rename = getattr(d, "mock_attack_mass_rename_blocked", None)
+    machine.active_defense_honeypot = getattr(d, "honeypot_triggered", False)
+    
     machine.asset_criticality = asset_criticality
     machine.status = "ONLINE"
     db.flush()

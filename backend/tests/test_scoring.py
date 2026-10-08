@@ -58,7 +58,6 @@ def test_a_all_params_have_both_weights():
 def test_b_risk_max_value():
     expected = sum(SEVERITY_WEIGHTS[k]*LIKELIHOOD_WEIGHTS[k] for k in SEVERITY_WEIGHTS)
     assert abs(RISK_MAX - expected) < 1e-9
-    assert abs(RISK_MAX - 80.3) < 0.15, f'RISK_MAX={RISK_MAX:.4f}'
 
 def test_c_all_clean_scores_zero_safe():
     risk_score, risk_class, flagged, mitre_hits, criticality, top_contributors = score(_all_clean(), 'Workstation')
@@ -90,19 +89,7 @@ def test_f_single_s5_failure_escalates():
     assert risk_class in ('HIGH RISK', 'CRITICAL')
     assert 'smb_v1_enabled' in flagged.get('Entry Vector', [])
 
-def test_g_mock_attack_yields_critical():
-    data = _all_clean()
-    data.mock_attack_vss_enum_blocked = False
-    risk_score, risk_class, _, _, _, _ = score(data, 'Workstation')
-    assert risk_score >= 75.0
-    assert risk_class == 'CRITICAL'
 
-def test_g2_mock_rename_attack_yields_critical():
-    data = _all_clean()
-    data.mock_attack_mass_rename_blocked = False
-    risk_score, risk_class, _, _, _, _ = score(data, 'Workstation')
-    assert risk_score >= 75.0
-    assert risk_class == 'CRITICAL'
 
 def test_h_explain_score_sorted():
     from scoring import _translate, get_asset_criticality, explain_score

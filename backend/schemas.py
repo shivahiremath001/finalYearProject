@@ -116,6 +116,7 @@ class MachineOut(BaseModel):
 
     id: int
     hostname: str
+    custom_name: Optional[str] = None
     ip_address: str
     mac_address: Optional[str] = None
     machine_guid: Optional[str] = None
@@ -125,6 +126,9 @@ class MachineOut(BaseModel):
     last_seen: Optional[datetime]
     last_risk_score: float
     last_risk_class: str
+    active_defense_vss_enum: Optional[bool] = None
+    active_defense_mass_rename: Optional[bool] = None
+    active_defense_honeypot: Optional[bool] = None
     status: str = "ONLINE"
 
     model_config = {"from_attributes": True}
@@ -174,6 +178,19 @@ class AdminOut(BaseModel):
     username: str
     is_active: bool
     model_config = {"from_attributes": True}
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class VerifyPasswordRequest(BaseModel):
+    password: str
+
+
+class CustomNameRequest(BaseModel):
+    custom_name: str
 
 
 # ─────────────────────────────────────────────────────────────────────────────
