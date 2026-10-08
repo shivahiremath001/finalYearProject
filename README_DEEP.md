@@ -425,12 +425,11 @@ When `honeypot_triggered: true` is received in the ingest payload, the scoring e
 # backend/scoring.py
 if getattr(data, "honeypot_triggered", False):
     flagged = {"Active Attack": ["honeypot_triggered"]}
-    score = 100.0
-    category = "CRITICAL"
+    mitre_hits = [{"technique_id": "T1486", "technique_name": "Data Encrypted for Impact", "tactic": "Impact"}]
     top_contributors = [{"param": "honeypot_triggered", "severity": 5.0,
-                         "likelihood": 1.0, "contribution": 100.0,
+                         "likelihood": 1.0, "contribution": 100.0, "is_failed": True,
                          "technique_id": "T1486", "tactic": "Impact"}]
-    return score, category, flagged, top_contributors
+    return (100.0, "CRITICAL", flagged, mitre_hits, asset_criticality, top_contributors)
 ```
 
 This ensures that an active attack in progress is never masked by a low configuration score, and is presented as a distinct `Active Attack` kill-chain phase in the dashboard — separate from configuration misconfigurations.
@@ -935,35 +934,47 @@ Administrative dashboard access is guarded by OAuth2 Bearer Tokens utilizing JSO
   }
   ```
 
-#### 4. Score Explanation & Breakdown
-- **Endpoint:** `GET /machines/{machine_id}/score-explanation`
+#### 4. Endpoint Detail & Score Breakdown
+- **Endpoint:** `GET /machines/{hostname}/detail`
 - **Headers:** `Authorization: Bearer <JWT_TOKEN>`
-- **Response (200 OK):** Itemized breakdown of top risk contributors, raw points, and percentage contributions.
+- **Response (200 OK):** Comprehensive posture inspector returning registry metadata, latest risk score, score trend, flagged parameters grouped by kill-chain phase, MITRE ATT&CK technique hits, anomaly Z-score data, score history array (last 20 scans for chart rendering), and pending command count.
   ```json
   {
-    "machine_id": 1,
     "hostname": "FINANCE-PC01",
+    "ip_address": "192.168.1.105",
+    "mac_address": "00:1A:2B:3C:4D:5E",
+    "machine_guid": "a1b2c3d4-e5f6-7890-abcd-ef0123456789",
+    "os_version": "Windows 11 Pro 23H2",
     "risk_score": 68.5,
-    "risk_category": "HIGH RISK",
-    "asset_criticality": "Workstation",
-    "total_factors_flagged": 5,
-    "top_contributors": [
-      {
-        "parameter": "vss_deleted",
-        "description": "Volume Shadow Copies are absent or deleted",
-        "severity_weight": 5.0,
-        "likelihood_weight": 1.0,
-        "points_contributed": 5.0,
-        "percent_of_total_risk": 32.4
-      }
-    ]
+    "risk_class": "HIGH RISK",
+    "trend": "up",
+    "flagged": {
+      "Recovery Prevention": ["vss_deleted"],
+      "Evasion & Persistence": ["tamper_protection_off"]
+    },
+    "mitre_hits": [
+      { "technique_id": "T1490", "technique_name": "Inhibit System Recovery", "tactic": "Impact" }
+    ],
+    "anomaly": { "is_anomaly": true, "z_score": 2.45 },
+    "anomaly_streak": 2,
+    "pending_commands": 0
   }
   ```
 
-#### 5. Real-Time Streaming Feed
-- **Endpoint:** `WS /ws/live`
+#### 5. Fleet Policy Exceptions & Governance
+- **List Policies:** `GET /policies` (Bearer JWT)
+- **Create Exception:** `POST /policies` (Bearer JWT) — Payload: `{"hostname": "...", "param_key": "...", "reason": "..."}`
+- **Delete Exception:** `DELETE /policies/{id}` (Bearer JWT)
+
+#### 6. Enterprise Global Remediation & Analytics
+- **Global Fleet Fix:** `POST /commands/global` (Bearer JWT) — Payload: `{"command_key": "disable_smb1"}` (queues fix on all currently non-compliant machines)
+- **Analytics Trend History:** `GET /analytics/history` (Bearer JWT) — Returns 30-day daily fleet average risk scores
+- **Daily PDF Report:** `GET /reports/daily/download` (Bearer JWT) — Returns dynamic executive PDF compliance report
+
+#### 7. Real-Time Streaming Feed
+- **Endpoint:** `WS /ws/live?token=<JWT_TOKEN>`
 - **Protocol:** WebSocket
-- **Payload:** Real-time JSON events (`scan_completed`, `anomaly_detected`, `command_status_changed`, `machine_status_changed`).
+- **Payload:** Real-time JSON events (`connected`, `scan_completed`, `anomaly_detected`, `command_ack`, `host_offline`, `ping`).
 
 ---
 
@@ -979,33 +990,32 @@ version: '3.8'
 
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    build: ./backend
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
     environment:
       - DATABASE_URL=sqlite:///./r3p.db
-      - AGENT_API_KEY=r3p-secret-key-change-in-production
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    build: ./frontend
     ports:
-      - "3000:3000"
+      - "5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
     restart: unless-stopped
 ```
 
 ### Volume Mounts & State Persistence
 - **Backend Service:** Built on `python:3.10-slim`. Mounts host directory `./backend` to `/app`. The SQLite database (`r3p.db`) persists on the host machine across container restarts.
-- **Frontend Service:** Built on `node:20-slim`. Isolates the Vite React application while binding port 3000. An anonymous volume (`/app/node_modules`) prevents cross-platform module pollution between Windows host environments and Linux container layers.
+- **Frontend Service:** Built on `node:20-slim`. Isolates the Vite React application while binding port 5173. An anonymous volume (`/app/node_modules`) prevents cross-platform module pollution between Windows host environments and Linux container layers.
 
 ---
 
@@ -1015,27 +1025,33 @@ R3P maintains a unit test suite built with **PyTest** (`backend/tests/test_scori
 
 ```python
 # backend/tests/test_scoring.py snippet
-def test_baseline_secure_payload():
+def test_c_all_clean_scores_zero_safe():
     """Verify clean machine scores exactly 0.0 and returns SAFE."""
-    payload = create_clean_telemetry()
-    score_val, category, flagged = score(payload)
-    assert score_val == 0.0
-    assert category == "SAFE"
+    risk_score, risk_class, flagged, mitre_hits, criticality, top_contributors = score(_all_clean(), 'Workstation')
+    assert risk_score == 0.0
+    assert risk_class == 'SAFE'
     assert len(flagged) == 0
 
-def test_critical_escalation_rule():
-    """Verify single weight-5 failure forces HIGH RISK classification."""
-    payload = create_clean_telemetry()
-    payload.smb_v1_enabled = True # Weight 5.0
-    score_val, category, flagged = score(payload)
-    assert category in ["HIGH RISK", "CRITICAL"]
+def test_f_single_s5_failure_escalates():
+    """Verify single weight-5 failure forces HIGH RISK or CRITICAL classification."""
+    data = _all_clean()
+    data.smb_v1_enabled = True # Weight 5.0
+    risk_score, risk_class, flagged, _, _, _ = score(data, 'Workstation')
+    assert risk_score >= 50.0
+    assert risk_class in ('HIGH RISK', 'CRITICAL')
+    assert 'smb_v1_enabled' in flagged.get('Entry Vector', [])
 
-def test_asset_criticality_multiplier():
+def test_e_dc_greater_than_server_greater_than_workstation():
     """Verify Domain Controller yields higher score than Workstation for identical flags."""
-    payload = create_telemetry_with_issues()
-    score_workstation, _, _ = score(payload, asset_criticality="Workstation")
-    score_dc, _, _ = score(payload, asset_criticality="Domain Controller")
-    assert score_dc > score_workstation
+    data = _all_clean()
+    data.rdp_open = True
+    w_score, _, _, _, w_crit, _ = score(data, 'Workstation')
+    s_score, _, _, _, s_crit, _ = score(data, 'Server')
+    dc_score, _, _, _, dc_crit, _ = score(data, 'Domain Controller')
+    assert dc_crit == 1.6
+    assert s_crit == 1.3
+    assert w_crit == 1.0
+    assert dc_score > s_score > w_score
 ```
 
 To run test suites:
