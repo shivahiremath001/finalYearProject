@@ -24,6 +24,8 @@
    - [Local Remediation Allowlist Execution](#local-remediation-allowlist-execution)
    - [Multi-OS Guided Manual Remediation Architecture](#multi-os-guided-manual-remediation-architecture)
    - [Persistence, Registry Hooks, & Multi-Threading](#persistence-registry-hooks--multi-threading)
+   - [Honeytoken Canary Subsystem (Deception Technology)](#honeytoken-canary-subsystem-deception-technology)
+   - [Offline Local Risk Scoring & Disconnected Mode Architecture](#offline-local-risk-scoring--disconnected-mode-architecture)
 6. [Backend Server & Database Mechanics](#backend-server--database-mechanics)
    - [FastAPI & Async Task Lifecycle](#fastapi--async-task-lifecycle)
    - [SQLAlchemy ORM & SQLite WAL Mode Mechanics](#sqlalchemy-orm--sqlite-wal-mode-mechanics)
@@ -453,6 +455,28 @@ Honeytoken-based detection is a well-established intrusion detection methodology
 | **Target** | Controlled Folder Access / EDR behavioral engine | Real ransomware file-rename encryption behavior |
 | **Risk Level** | Zero (only touches agent's own test files) | Zero (file is a decoy with no real data) |
 | **Detection Signal** | Defensive containment pass/fail | Active attacker presence confirmation |
+
+### Offline Local Risk Scoring & Disconnected Mode Architecture
+
+To maintain posture awareness and endpoint visibility when machines operate off-grid (e.g., roaming laptops, disconnected field units, or during enterprise network partitions), R3P features an **Autonomous Disconnected Mode** within `collector.py`:
+
+1. **Dual-Mode Scoring Strategy (Server-Authoritative vs. Local Estimate):**
+   - **Online Mode (Server-Authoritative):** When the backend is reachable via HTTPS, raw telemetry is ingested by `POST /ingest`. The central backend computes the authoritative risk score, evaluates fleet-wide rolling Z-scores, and reconciles admin-approved policy exceptions from the database.
+   - **Offline Mode (Local Estimate):** If network transmission fails (`send_telemetry()` returns `None`), the agent automatically triggers `build_local_scan_result(data)`. Instead of suppressing scores or displaying a blank screen, the agent executes a local instance of the mathematical scoring algorithm.
+
+2. **Mathematical Parity in Disconnected Execution:**
+   - The agent maintains local copies of the 27-parameter severity weights (`LOCAL_SEVERITY_WEIGHTS`) and likelihood weights (`LOCAL_LIKELIHOOD_WEIGHTS`).
+   - Normalization relies on the dynamic baseline ceiling:
+     $$\text{Score}_{\text{local}} = \min\left(100.0, \frac{\sum (S_i \times L_i \times C_{\text{baseline}})}{\text{Risk}_{\max}} \times 100.0\right)$$
+   - Adheres to the identical **Failsafe Escalation Rule**: Any critical weight-5.0 vulnerability (such as active SMBv1, disabled Defender, or unblocked mock attack) guarantees a minimum score floor of 50.0 (`HIGH RISK`).
+   - Categorizes risk severity bands: $\ge 75 \to \text{CRITICAL}$, $\ge 50 \to \text{HIGH RISK}$, $\ge 25 \to \text{LOW RISK}$, $< 25 \to \text{SAFE}$.
+
+3. **User Interface Transparency & SOC Integrity Disclaimers:**
+   - To adhere to Zero-Trust governance and avoid misleading operators into believing local calculations override centralized enterprise policy, the agent GUI displays explicit visual cues:
+     - **Score Indicator:** `Estimated Score: 68.5 / 100 (Local Offline Estimate)`
+     - **Telemetry Status:** `Scan complete on this device — X findings; not synced to server`
+     - **Notice Banner:** *"This scan is shown from local checks and has not reached the server. The displayed score is a local estimate and unverified by the SOC; server-calculated asset criticality and policy exceptions are unavailable offline."*
+   - Once server communication resumes, the authoritative backend calculation seamlessly supersedes the local estimate and commits the verified scan to the database.
 
 ---
 

@@ -2,6 +2,13 @@
 
 This document tracks all modifications, enhancements, and bug fixes applied to the Ransomware Readiness & Risk Profiler (R3P) codebase.
 
+## [2026-10-09] - Offline Local Risk Score Estimation & UI Transparency
+
+### 🛡️ Endpoint Agent (`collector.py`)
+- **Offline Risk Estimation Engine:** Integrated baseline severity and likelihood weight tables (`LOCAL_SEVERITY_WEIGHTS`, `LOCAL_LIKELIHOOD_WEIGHTS`, `LOCAL_RISK_MAX`) into `collector.py`. When backend connectivity is severed, `build_local_scan_result()` calculates a normalized 0–100 risk score and evaluates standard severity bands (`CRITICAL`, `HIGH RISK`, `LOW RISK`, `SAFE`) locally.
+- **Failsafe Escalation Parity:** Preserved the server's failsafe rule ensuring any active critical ($S=5.0$) failure enforces a minimum floor score of 50.0 (`HIGH RISK`).
+- **UI State Disclaimers:** Updated the desktop agent GUI to clearly distinguish between server-authoritative and local estimates. Displays `Estimated Score: X / 100 (Local Offline Estimate)` alongside an informational SOC governance disclaimer.
+
 ## [2026-09-14] - Docker Containerization & UI Polish
 
 ### 🐳 Infrastructure & DevOps (Docker)
