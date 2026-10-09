@@ -1484,10 +1484,73 @@ LOCAL_BLOCK_RESULT_FIELDS = {
     "mock_attack_mass_rename_blocked",
 }
 
+LOCAL_SEVERITY_WEIGHTS = {
+    "smb_v1_enabled": 5.0,
+    "rdp_enabled": 4.0,
+    "autorun_enabled": 2.0,
+    "open_network_shares": 3.0,
+    "macro_execution_enabled": 4.0,
+    "powershell_unrestricted": 4.0,
+    "uac_disabled": 3.0,
+    "applocker_absent": 2.0,
+    "defender_disabled": 4.0,
+    "firewall_disabled": 4.0,
+    "tamper_protection_off": 3.0,
+    "event_logging_disabled": 2.0,
+    "admin_shares_enabled": 3.0,
+    "lsass_protection_off": 5.0,
+    "guest_account_active": 2.0,
+    "vss_deleted": 5.0,
+    "backup_absent": 5.0,
+    "bitlocker_off": 5.0,
+    "nla_disabled": 4.0,
+    "always_install_elevated": 5.0,
+    "wdigest_enabled": 5.0,
+    "laps_absent": 3.0,
+    "vulnerable_driver_blocklist_enabled": 5.0,
+    "hvci_enabled": 4.0,
+    "asr_rules_configured": 4.0,
+    "mock_attack_vss_enum_succeeded": 5.0,
+    "mock_attack_mass_rename_succeeded": 5.0,
+}
+
+LOCAL_LIKELIHOOD_WEIGHTS = {
+    "smb_v1_enabled": 0.4,
+    "rdp_enabled": 0.9,
+    "autorun_enabled": 0.3,
+    "open_network_shares": 0.7,
+    "macro_execution_enabled": 0.8,
+    "powershell_unrestricted": 1.0,
+    "uac_disabled": 0.6,
+    "applocker_absent": 0.5,
+    "defender_disabled": 0.9,
+    "firewall_disabled": 0.6,
+    "tamper_protection_off": 0.8,
+    "event_logging_disabled": 0.7,
+    "admin_shares_enabled": 0.8,
+    "lsass_protection_off": 0.9,
+    "guest_account_active": 0.4,
+    "vss_deleted": 1.0,
+    "backup_absent": 0.8,
+    "bitlocker_off": 0.5,
+    "nla_disabled": 0.8,
+    "always_install_elevated": 0.6,
+    "wdigest_enabled": 0.7,
+    "laps_absent": 0.8,
+    "vulnerable_driver_blocklist_enabled": 0.9,
+    "hvci_enabled": 0.8,
+    "asr_rules_configured": 0.8,
+    "mock_attack_vss_enum_succeeded": 1.0,
+    "mock_attack_mass_rename_succeeded": 1.0,
+}
+LOCAL_RISK_MAX = sum(LOCAL_SEVERITY_WEIGHTS[k] * LOCAL_LIKELIHOOD_WEIGHTS[k] for k in LOCAL_SEVERITY_WEIGHTS)
 
 def build_local_scan_result(data: dict) -> dict:
-    """Build displayable findings without inventing the server's risk score."""
+    """Build displayable findings and estimate risk score locally."""
     flagged = {}
+    total_risk = 0.0
+    has_critical_failure = False
+
     for raw_key, (finding_key, phase) in LOCAL_FIELD_TO_FINDING.items():
         if raw_key not in data or data[raw_key] is None:
             continue
@@ -1500,11 +1563,30 @@ def build_local_scan_result(data: dict) -> dict:
             risky = bool(value)
         if risky:
             flagged.setdefault(phase, []).append(finding_key)
+            sev = LOCAL_SEVERITY_WEIGHTS.get(finding_key, 0.0)
+            lik = LOCAL_LIKELIHOOD_WEIGHTS.get(finding_key, 0.0)
+            total_risk += sev * lik
+            if sev == 5.0:
+                has_critical_failure = True
+
+    normalized_score = (total_risk / LOCAL_RISK_MAX) * 100.0 if LOCAL_RISK_MAX > 0 else 0.0
+    normalized_score = min(normalized_score, 100.0)
+    if has_critical_failure:
+        normalized_score = max(normalized_score, 50.0)
+        
+    if normalized_score >= 75:
+        risk_class = "CRITICAL"
+    elif normalized_score >= 50:
+        risk_class = "HIGH RISK"
+    elif normalized_score >= 25:
+        risk_class = "LOW RISK"
+    else:
+        risk_class = "SAFE"
 
     return {
         "local_only": True,
-        "risk_score": None,
-        "risk_class": "LOCAL SCAN",
+        "risk_score": round(normalized_score, 1),
+        "risk_class": risk_class,
         "flagged": flagged,
         "policy_exceptions": [],
         "local_scan_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -2763,10 +2845,10 @@ class MonitorApp(tk.Tk):
             w.destroy()
 
         local_only = result.get("local_only", False)
-        risk_class = "LOCAL SCAN" if local_only else result.get("risk_class", "UNKNOWN")
+        risk_class = result.get("risk_class", "UNKNOWN")
         risk_score = result.get("risk_score")
         flagged = result.get("flagged", {})
-        color = COLORS["info"] if local_only else RISK_COLORS.get(risk_class, COLORS["subtle"])
+        color = RISK_COLORS.get(risk_class, COLORS["subtle"])
 
         # Risk badge
         badge = RoundedCard(
@@ -2792,8 +2874,8 @@ class MonitorApp(tk.Tk):
                 self.result_inner,
                 text=(
                     "This scan is shown from local checks and has not reached the server. "
-                    "A server-calculated score and policy exceptions are unavailable offline; "
-                    "some listed findings may be excepted in the dashboard."
+                    "The displayed score is a local estimate and unverified by the SOC; "
+                    "server-calculated asset criticality and policy exceptions are unavailable offline."
                 ),
                 font=("Segoe UI", 8),
                 bg=COLORS["card2"],
@@ -2809,14 +2891,19 @@ class MonitorApp(tk.Tk):
         row.pack(anchor="w", pady=(0, 4))
         tk.Label(
             row,
-            text="Risk Score: " if not local_only else "Server Risk Score: ",
+            text="Risk Score: " if not local_only else "Estimated Score: ",
             font=("Segoe UI", 10),
             bg=COLORS["card"],
             fg=COLORS["subtle"],
         ).pack(side="left")
+        
+        score_text = f"{risk_score} / 100" if risk_score is not None else "Unavailable offline"
+        if local_only and risk_score is not None:
+            score_text += " (Local Offline Estimate)"
+            
         tk.Label(
             row,
-            text=(f"{risk_score} / 100" if risk_score is not None else "Unavailable offline"),
+            text=score_text,
             font=("Segoe UI", 10, "bold"),
             bg=COLORS["card"],
             fg=color,
