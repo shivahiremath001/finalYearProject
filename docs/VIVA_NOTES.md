@@ -29,6 +29,31 @@
 
 **Limitation:** The honeytoken monitors only its own specific bait file and directory. A sophisticated attacker aware of the canary location could theoretically avoid it. In production, multiple honeytokens distributed across multiple locations would be deployed. Additionally, the flag persists only in memory until the next restart of the agent; a system reboot after a honeypot trip clears the flag (though the renamed file would still be visible on disk as evidence).
 
+## T7: Examiner Defense & Methodological Boundaries (Addressing Rigorous Critiques)
+
+### 1. "PowerShell Execution Policy is not a security boundary. Why does your model score it?"
+* **What to say:** "We explicitly acknowledge Microsoft's official position: `ExecutionPolicy` is an administrative safety guardrail against accidental script execution, not an isolation boundary, since attackers can bypass it via `-ExecutionPolicy Bypass` or encoded commands. However, from a defense-in-depth and CIS benchmark perspective, an enterprise machine operating with `Unrestricted` demonstrates poor hygiene and allows unvetted double-click `.ps1` execution. That is why it carries a weight of 4.0, but is paired with complementary controls like Attack Surface Reduction (ASR) rules and driver blocklists."
+
+### 2. "Why does MachineGuid not uniquely identify physical hardware?"
+* **What to say:** "`MachineGuid` in `HKLM:\SOFTWARE\Microsoft\Cryptography` is an OS-installation GUID. While it is stable across IP shifts and MAC address randomization, it does not survive fresh OS reinstallation or unspecialized Sysprep cloning. That is precisely why R3P implements a **3-tier identity resolution hierarchy**: Tier 1 checks `MachineGuid`, but if absent or mismatched, Tier 2 falls back to physical MAC, and Tier 3 checks SMBIOS motherboard UUID (`wmic csproduct get uuid`) and canonical hostname."
+
+### 3. "Does blocking your mock attack prove the system is safe from ransomware?"
+* **What to say:** "No, and our scoring engine deliberately avoids that inference. A blocked mock attack simply validates that a specific behavioral containment mechanism—namely Windows Defender Controlled Folder Access (CFA) or rapid file-rename burst throttling—intercepted that test probe. It is an active validation signal that contributes zero risk to that parameter, but the endpoint's overall risk remains governed by the other 25 configuration checks."
+
+### 4. "Why is a decoy file not classified under MITRE T1491 (Defacement)?"
+* **What to say:** "That was an important conceptual correction. T1491 refers strictly to external/internal visual content defacement. A honeypot canary file is a defensive deception asset categorized under **MITRE D3FEND (D3-DT: Decoy File)** and **MITRE Engage (EAC0018: Honeytoken)**. The adversary attack technique that trips it is **MITRE ATT&CK T1486 (Data Encrypted for Impact)**, because the attacker is attempting mass encryption."
+
+### 5. "How does SQLite WAL mode handle concurrency?"
+* **What to say:** "SQLite WAL mode eliminates reader-writer lock contention by allowing concurrent readers to query the database while a writer appends to the `.db-wal` log file. However, SQLite remains strictly single-writer; multiple concurrent write transactions are serialized. For our scale—tens to hundreds of endpoints polling every 60 seconds with sub-millisecond writes—WAL mode combined with `PRAGMA synchronous = NORMAL` provides optimal performance without requiring the operational complexity of an external Postgres cluster."
+
+### 6. "Is your 0–100 score an empirical probability of a ransomware incident?"
+* **What to say:** "No. Our score is a Multi-Criteria Decision Analysis (MCDA) heuristic posture index. It measures relative defensive compliance and configuration hardening against documented attack vectors. It does not claim to be an actuarial probability model, because breach probability depends on external factors like threat actor capability, zero-day vulnerabilities, and user phishing susceptibility."
+
+---
+
+## T8: Disconnected & Offline Local Risk Scoring
+* **What to say:** "In zero-trust architecture, the central SOC server is the single source of truth for risk scoring because it possesses organizational context: admin-approved policy exceptions and asset criticality multipliers ($C_{asset}$). However, to ensure roaming laptops and field units maintain operational visibility off-grid, `collector.py` embeds a baseline offline estimation engine. When the server is unreachable, the agent calculates a local normalized score with baseline weights and displays `Estimated Score: X / 100 (Local Offline Estimate)` alongside an unverified SOC disclaimer. Once the endpoint reconnects, the server-authoritative score seamlessly overwrites the estimate in the database."
+
 ---
 
 ## Deployment Architecture Q&A

@@ -90,7 +90,7 @@ R3P fills this critical defense gap by introducing continuous posture profiling:
 
 ## Problem Statement & Threat Landscape
 
-Ransomware accounts for over **$57 billion in global damages annually** (Cybersecurity Ventures, 2025). Empirical incident response data demonstrates that **over 80% of successful ransomware breaches are enabled by configuration defects**, rather than unknown zero-day vulnerabilities:
+Industry analysts project global ransomware damages to exceed **$57 billion annually by 2025** (Cybersecurity Ventures projection). Incident response telemetry from Microsoft (Digital Defense Report), CISA, and industry incident reports consistently demonstrates that the vast majority of enterprise ransomware compromises exploit **preventable security misconfigurations, weak authentication, and exposed remote access**, rather than exotic zero-day vulnerabilities:
 
 | Exploited Configuration Defect | Real-World Incident Frequency | Ransomware Families Exploiting It | R3P Detection Parameter |
 |---|---|---|---|
@@ -102,7 +102,7 @@ Ransomware accounts for over **$57 billion in global damages annually** (Cyberse
 | **BYOVD (Vulnerable Driver Exploitation)** | 25% – 40% (EDR termination) | BlackByte, AvosLocker, Scattered Spider (Scatter Swine / UNC3944) | `vulnerable_driver_blocklist_enabled` |
 
 ### Systemic Industry Challenges Solved by R3P
-- **Static vs. Dynamic Visibility:** Standard vulnerability scanners run scheduled (weekly/monthly) scans. R3P provides continuous 60-second telemetry streaming to catch temporary configuration changes immediately.
+- **Static vs. Dynamic Visibility:** Standard vulnerability scanners run scheduled (weekly/monthly) scans. R3P provides periodic 60-second telemetry sampling (with immediate event-driven rescans upon local remediation) to catch configuration drift rapidly.
 - **Binary Checklists vs. Quantified Risk:** Pass/Fail checklists fail to convey business risk. R3P computes a unified 0–100 score adjusted for asset criticality (Workstation vs. Domain Controller).
 - **Passive Auditing vs. Active Validation:** Passive registry checks may report Defender as "enabled" even if a rootkit has rendered it inert. R3P's active validation runs behavioral tests to verify real-time response.
 - **Alert Fatigue vs. Statistical Anomaly Detection:** Instead of spamming security operations center (SOC) teams with raw setting changes, R3P flags statistical anomalies ($|z| > 2.0$) representing actual posture drift.
@@ -312,7 +312,7 @@ To ensure **absolute, unbroken endpoint identity continuity**, R3P implements a 
 ```
 
 1. **Tier 1 (Primary Key - Windows Cryptography MachineGuid):**
-   - The agent reads `HKLM:\SOFTWARE\Microsoft\Cryptography\MachineGuid`. This is a persistent 128-bit UUID generated upon Windows operating system installation that remains completely immutable across IP shifts, DHCP reboots, user logons, and interface changes. If missing, the agent queries the motherboard hardware UUID via Win32 BIOS (`wmic csproduct get uuid`).
+   - The agent reads `HKLM:\SOFTWARE\Microsoft\Cryptography\MachineGuid`. This is a persistent 128-bit UUID generated during Windows operating system installation. While installation-specific (and altered if an OS is freshly reinstalled or cloned without Sysprep specialization), it remains stable across IP reallocations, DHCP renewals, user logons, and network interface switches. To complement OS-level imaging edge cases, the identity pipeline also queries the motherboard hardware UUID via Win32 BIOS (`wmic csproduct get uuid`).
 2. **Tier 2 (Secondary Fallback - Primary Active Interface MAC):**
    - If registry GUID access is restricted, the backend queries the database for an existing machine registered with the primary active network interface's hardware MAC address.
 3. **Tier 3 (Tertiary Fallback - System Hostname):**
@@ -326,8 +326,8 @@ Unlike passive audit tools that rely solely on reading static registry keys (whi
 
 1. **VSS Enumeration Reconnaissance Probe (`mock_attack_vss_enum_succeeded`):**
    - *Mechanism:* The agent issues a read-only PowerShell/WMI query for `Win32_ShadowCopy` instances.
-   - *Threat Simulation:* Ransomware actors always conduct VSS reconnaissance (MITRE ATT&CK T1490) prior to execution to ensure volume recovery snapshots exist and must be destroyed.
-   - *Evaluation:* If the read-only query returns successfully, this probe is recorded as allowed and contributes risk. If endpoint protection terminates the query or restricts WMI reconnaissance, the probe is recorded as blocked.
+   - *Threat Simulation:* Ransomware operators frequently conduct shadow copy reconnaissance (an operational precursor to MITRE ATT&CK T1490 / T1082) to inventory restore points prior to deletion.
+   - *Evaluation:* If the read-only query executes without restriction, the probe outcome is recorded as allowed (`mock_attack_vss_enum_succeeded = True`), contributing to the risk score. If endpoint protection or WMI auditing intercepts/blocks the reconnaissance query, the probe is recorded as blocked. *Note: Validating that enumeration was blocked verifies this specific reconnaissance safeguard; it does not in itself prove that shadow copy deletion would be thwarted.*
 2. **Dual-Probe Mass File Manipulation & Rename Attack (`mock_attack_mass_rename_succeeded`):**
    Ransomware behavior is characterized by rapid, unconstrained modification and batch file renaming. Rather than relying on a naive `%TEMP%`-only script (which default Windows Defender ignores because `%TEMP%` is not a protected user document directory), R3P implements a **Dual-Probe Architecture**:
    - **Probe 1 (Live Anti-Ransomware User Space Attack — MITRE ATT&CK T1486):**
@@ -339,8 +339,9 @@ Unlike passive audit tools that rely solely on reading static registry keys (whi
      - Simultaneously creates 100 disposable `.txt` files in `%TEMP%\r3p_mock_attack\` and triggers a rapid batch rename burst loop.
      - Evaluates whether behavioral EDR heuristics intercept and throttle high-velocity file modifications across the system.
    - **Verdict Evaluation:**
-     - If either Probe 1 is blocked by CFA/EDR or Probe 2 is throttled/halted, the attack is marked **BLOCKED (`Safe`)**.
-     - If both probes execute unhindered without defensive intervention, the attack is marked **SUCCEEDED (`Vulnerable`)**, indicating the host lacks runtime ransomware containment. These results are shown independently as Active Defense Status badges (🍯 and 🛡️) in the UI.
+     - If either Probe 1 is blocked by CFA/EDR or Probe 2 is throttled/halted, the active defense probe is marked **BLOCKED (PASS)**.
+     - If both probes execute unhindered without defensive intervention, the probe is marked **SUCCEEDED (FAIL / Flagged)**, indicating the host lacks runtime containment for rapid batch renames in protected paths.
+     - *Important Boundary:* A probe PASS indicates that specific behavioral file-protection controls (e.g. CFA / rapid rename throttling) responded as expected; it does not imply blanket immunity against advanced kernel-mode or evasive ransomware strains.
 
 **Demo preparation:** Use a disposable Windows 10/11 VM, keep the intended Defender/EDR policy enabled, run the collector elevated, and take a VM snapshot before testing. When testing Controlled Folder Access, enable it via elevated PowerShell (`Set-MpPreference -EnableControlledFolderAccess Enabled`). For predictable fleet simulations without altering host systems, run `python demo_collector.py`.
 
@@ -436,9 +437,9 @@ if getattr(data, "honeypot_triggered", False):
 
 This ensures that an active attack in progress is never masked by a low configuration score, and is presented as a distinct `Active Attack` kill-chain phase in the dashboard — separate from configuration misconfigurations.
 
-**MITRE ATT&CK Alignment:**
-- **T1486** (Data Encrypted for Impact): The file rename probe directly simulates the encryption-phase file manipulation behavior.
-- **T1491** (Defacement / Canary Trap): The bait file acts as a network-accessible early warning canary trap.
+**MITRE Framework Alignment:**
+- **Adversary Trigger — MITRE ATT&CK T1486 (Data Encrypted for Impact):** The tripwire is tripped by unauthorized file content modification or bulk encryption renaming in shared user paths.
+- **Defensive Mechanism — MITRE D3FEND (D3-DT: Decoy File) & MITRE Engage (EAC0018: Honeytoken):** Rather than an offensive technique, the bait file functions as a deception asset deployed in standard user directories to provide high-confidence, early-warning tripwire signals before mass encryption propagates.
 
 **Academic Justification (Deception Technology):**
 Honeytoken-based detection is a well-established intrusion detection methodology:
@@ -507,8 +508,8 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 
 #### Why WAL Mode Matters Architecturally
 Standard SQLite locks the entire database file during write operations, causing `database is locked` errors under concurrent API write calls and dashboard read queries.
-- **WAL Mode Benefits:** Readers do not block writers, and writers do not block readers. Reads occur concurrently against the main database file while writes append to a separate `.db-wal` log file.
-- **Performance Characteristics:** Capable of handling over 100 write operations per second—more than sufficient for hundreds of endpoints transmitting telemetry every 60 seconds.
+- **WAL Mode Benefits:** Readers do not block writers, and the writer does not block readers. While SQLite remains strictly a single-writer engine (one transaction writes to the `.db-wal` log file at a time), readers can execute concurrent queries simultaneously without encountering database locks.
+- **Performance Characteristics:** Combined with `PRAGMA synchronous = NORMAL`, WAL mode significantly reduces I/O wait times and provides throughput capable of servicing tens to hundreds of periodic endpoint ingests comfortably on commodity host hardware.
 
 ### WebSocket Live Broadcast Engine
 
@@ -632,6 +633,9 @@ $$\text{Risk}_{max} = \sum_{i=1}^{n} \left[ 1 \cdot S(p_i) \cdot L(p_i) \cdot 1.
 The **Base Normalized Risk Score** ($R_{base}$) is:
 $$R_{base} = \min \left( 100.0, \left( \frac{\text{Risk}_{raw}}{\text{Risk}_{max}} \right) \times 100 \right)$$
 
+> **Methodological Note (Risk Score Interpretation):**  
+> The resulting score $R \in [0, 100]$ represents a **Multi-Criteria Decision Analysis (MCDA) heuristic posture index**, measuring relative defensive posture and configuration hardening against established ransomware tactics. It is not an actuarial probability or an empirical prediction of an imminent breach. A machine scoring 0.0 is hardened against the 27 monitored configuration vectors, but no security system can guarantee absolute immunity against novel zero-days or credential compromise.
+
 
 ### Severity, Likelihood, & Asset Criticality Weights
 
@@ -712,7 +716,7 @@ Represents the empirical frequency of occurrence across documented real-world ra
 | **`bitlocker_off`** | **5.0** | **0.5** | **2.50** | Verizon DBIR (Double Extortion); MITRE T1005 | **Offline Data Exfiltration Risk:** Unencrypted drives allow attackers to exfiltrate raw drive data prior to or without encryption, without needing local OS authentication. |
 | **`rdp_enabled`** | **4.0** | **0.9** | **3.60** | CISA/FBI Joint Ransomware Advisories; DBIR 2024 | **Primary Entry Vector:** Exposed Remote Desktop is the #1 initial access vector accounting for 60%+ of targeted enterprise ransomware attacks. |
 | **`nla_disabled`** | **4.0** | **0.8** | **3.20** | CISA Alert AA21-200A; MITRE T1021.001 | **Pre-Auth RDP Exploitation:** RDP without Network Level Authentication allows unauthenticated attackers to reach the Windows logon UI and execute BlueKeep/RDP exploits. |
-| **`powershell_unrestricted`** | **4.0** | **1.0** | **4.00** | Red Canary Threat Detection Report 2024; MITRE T1059.001 (Command and Scripting Interpreter: PowerShell) | **Execution Engine:** PowerShell is the dominant living-off-the-land utility used to download obfuscated stagers, execute Cobalt Strike beacons, and launch encryption scripts. |
+| **`powershell_unrestricted`** | **4.0** | **1.0** | **4.00** | Red Canary Threat Detection Report 2024; MITRE T1059.001 (Command and Scripting Interpreter: PowerShell) | **Execution Engine:** PowerShell is a primary living-off-the-land utility used to download stagers and launch scripts. *Note: Per Microsoft documentation, ExecutionPolicy is an operational safety guardrail to prevent accidental script execution, not an isolation boundary (as attackers can use `-ExecutionPolicy Bypass`). It is tracked here as an indicator of basic script execution hygiene.* |
 | **`defender_disabled`** | **4.0** | **0.9** | **3.60** | Sophos Threat Report; MITRE T1562.001 | **Defense Evasion:** Turning off Defender removes primary signature and heuristic endpoint monitoring, allowing unhindered payload execution. |
 | **`firewall_disabled`** | **4.0** | **0.6** | **2.40** | NIST SP 800-41 Rev. 1; MITRE T1562.004 | **Network Exposure:** Disabling host firewall opens all listening TCP/UDP ports to internal lateral movement and port scanning. |
 | **`macro_execution_enabled`** | **4.0** | **0.8** | **3.20** | Microsoft Threat Intelligence; MITRE T1204.002 | **Initial Delivery:** Office VBA macros serve as the primary phishing execution vector for initial access downloaders (Qakbot, Emotet). |
