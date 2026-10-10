@@ -68,13 +68,13 @@
         - [5. Global Remediation Center](#5-global-remediation-center)
         - [6. Policy Exceptions & Governance](#6-policy-exceptions--governance)
         - [7. Knowledge Base & System Documentation](#7-knowledge-base--system-documentation)
-    - [Real-Time WebSocket Feedback & Interactive States](#real-time-websocket-feedback--interactive-states)
+    - [WebSocket Feedback & Interactive States](#real-time-websocket-feedback--interactive-states)
 
 ---
 
 ## Abstract & Executive Overview
 
-**R3P (Ransomware Readiness & Risk Profiler)** is an enterprise-grade, client-server security platform designed to continuously measure, evaluate, analyze, and remediate ransomware vulnerability postures across Windows endpoint fleets. Traditional security solutions operate primarily on signature-based malware detection (AV/EDR) or periodic patch management (CVE scanners). However, modern ransomware strains—such as LockBit, BlackCat (ALPHV), Clop, and WannaCry—routinely bypass traditional controls by exploiting **misconfigurations**, disabling security tools via living-off-the-land techniques, deleting recovery mechanisms, and leveraging weak identity policies.
+**R3P (Ransomware Readiness & Risk Profiler)** is a client-server security platform designed to continuously measure, evaluate, analyze, and remediate ransomware vulnerability postures across Windows endpoint fleets. Traditional security solutions operate primarily on signature-based malware detection (AV/EDR) or periodic patch management (CVE scanners). However, modern ransomware strains—such as LockBit, BlackCat (ALPHV), Clop, and WannaCry—routinely bypass traditional controls by exploiting **misconfigurations**, disabling security tools via living-off-the-land techniques, deleting recovery mechanisms, and leveraging weak identity policies.
 
 R3P fills this critical defense gap by introducing continuous posture profiling:
 
@@ -84,7 +84,7 @@ R3P fills this critical defense gap by introducing continuous posture profiling:
 4. **Statistical Anomaly Detection (`anomaly.py`):** Implements a **Rolling Z-Score algorithm** across historical scans to detect Posture Drift—flagging sudden security degradations or unauthorized modifications in real time.
 5. **Allowlisted Remediation Engine (`remediation_registry.py`):** Admin-confirmed remote actions send only pre-approved string identifiers (`command_key`), which the agent checks against its local allowlist. After execution, the agent runs a fresh scan to verify observed configuration.
 6. **Multi-OS Remediation Guidance Directory:** Comprehensive remediation workflows spanning Windows 11, Windows 10, and Windows Server with copy-paste PowerShell commands, GUI navigation, verification checks, and operational cautions.
-7. **Real-Time Admin Dashboard:** A React 18 single-page application communicating with a FastAPI backend through HTTP REST and WebSocket feeds.
+7. **Live Admin Dashboard:** A React 18 single-page application communicating with a FastAPI backend through HTTP REST and WebSocket feeds.
 
 ---
 
@@ -120,7 +120,7 @@ Industry analysts project global ransomware damages to exceed **$57 billion annu
 - ✅ **Statistical Anomaly Detection:** Rolling Z-score computation over a sliding window ($N=10$) flagging posture drift ($|z| > 2.0$).
 - ✅ **MITRE ATT&CK Mapping:** Explicit cross-referencing of every check against official MITRE ATT&CK Enterprise v15 technique IDs.
 - ✅ **Controlled Remediation Protocol:** Admin-confirmed remote execution of allowlisted PowerShell actions, followed by an immediate verification scan.
-- ✅ **Real-Time Web Dashboard:** Responsive React 18 administrative interface with dynamic risk gauges, WebSocket streaming updates, and command execution audit logs.
+- ✅ **Live Web Dashboard:** Responsive React 18 administrative interface with dynamic risk gauges, WebSocket streaming updates, and command execution audit logs.
 - ✅ **JWT & API Key Security:** Dual-layer security enforcing API-key-authenticated telemetry ingestion and OAuth2 JWT-bearer-authenticated admin sessions.
 
 ### Functional Boundaries & Out-of-Scope Design Choices
@@ -218,7 +218,7 @@ sequenceDiagram
     Anomaly-->>API: Returns {is_anomaly: True, z_score: 4.82, direction: "spike"}
     API->>DB: Save Scan & Update Machine Record (crud.py)
     API->>WSHub: broadcast_event("scan_completed", payload)
-    WSHub-->>Admin: Push Real-Time Scan & Anomaly Update via WebSocket
+    WSHub-->>Admin: Push Live Scan & Anomaly Update via WebSocket
     API-->>Agent: Return Ingest Ack {status: "ok", risk_score: 68.5}
     
     Note over Agent, Admin: Command Remediation Flow
@@ -264,7 +264,7 @@ def start_continuous_loop(self):
             threading.Event().wait(1)
 ```
 
-To eliminate UI freezing during long-running WMI queries or active attack simulations, data collection is parallelized across worker threads using Python's `concurrent.futures.ThreadPoolExecutor`.
+To prevent UI freezing during long-running WMI queries or active attack simulations, data collection is parallelized across worker threads using Python's `concurrent.futures.ThreadPoolExecutor`.
 
 ### Endpoint Hardware Identity Engine (MachineGuid vs. MAC/IP)
 
@@ -272,7 +272,7 @@ Modern enterprise environments are characterized by frequent network roaming, DH
 - **IP Address Churn:** DHCP lease renewals or roaming across office subnets assign new IP addresses to the same physical laptop, causing naive systems to spawn duplicate database entries and fragment longitudinal anomaly baselines.
 - **Multiple & Dynamic MAC Addresses:** Laptops routinely possess 3+ physical and virtual MAC addresses (Wi-Fi, Ethernet, Bluetooth, Hyper-V, VPN TAP adapters). Furthermore, modern Windows 10/11 operating systems enable **MAC Address Randomization** by default on Wi-Fi networks for privacy, altering the reported MAC address across network connections.
 
-To ensure **absolute, unbroken endpoint identity continuity**, R3P implements a **3-Tier Identity Resolution Engine** in `backend/crud.py` and `collector.py`:
+To support **endpoint identity continuity**, R3P implements a **3-Tier Identity Resolution Engine** in `backend/crud.py` and `collector.py`:
 
 ```
                     ┌────────────────────────────────────────┐
@@ -469,7 +469,7 @@ To maintain posture awareness and endpoint visibility when machines operate off-
    - The agent maintains local copies of the 27-parameter severity weights (`LOCAL_SEVERITY_WEIGHTS`) and likelihood weights (`LOCAL_LIKELIHOOD_WEIGHTS`).
    - Normalization relies on the dynamic baseline ceiling:
      $$\text{Score}_{\text{local}} = \min\left(100.0, \frac{\sum (S_i \times L_i \times C_{\text{baseline}})}{\text{Risk}_{\max}} \times 100.0\right)$$
-   - Adheres to the identical **Failsafe Escalation Rule**: Any critical weight-5.0 vulnerability (such as active SMBv1, disabled Defender, or unblocked mock attack) guarantees a minimum score floor of 50.0 and raises the classification to HIGH RISK (`HIGH RISK`).
+   - Adheres to the identical **Failsafe Escalation Rule**: Any critical weight-5.0 vulnerability (such as active SMBv1, disabled Defender, or unblocked mock attack) enforces a minimum score floor of 50.0 and raises the classification to HIGH RISK (`HIGH RISK`).
    - Categorizes risk severity bands: $\ge 75 \to \text{CRITICAL}$, $\ge 50 \to \text{HIGH RISK}$, $\ge 25 \to \text{LOW RISK}$, $< 25 \to \text{SAFE}$.
 
 3. **User Interface Transparency & SOC Integrity Disclaimers:**
@@ -686,7 +686,7 @@ To ensure academic rigor and defendability before technical panels, R3P's weight
 
 ##### A. Technical Severity Weight ($S(p_i) \in [1.0, 5.0]$)
 Measures the maximum worst-case blast radius and systemic impact on host confidentiality, integrity, and recoverability if the misconfiguration is exploited:
-- **`5.0` (Critical Impact):** Eliminates host recovery mechanisms (e.g. VSS deletion, backup destruction), enables wormable network propagation (SMBv1), grants instantaneous root/SYSTEM credential dumping (LSASS PPL disabled, WDigest enabled), or bypasses kernel integrity (BYOVD blocklist disabled).
+- **`5.0` (Critical Impact):** Disables host recovery mechanisms (e.g. VSS deletion, backup destruction), enables wormable network propagation (SMBv1), grants instantaneous root/SYSTEM credential dumping (LSASS PPL disabled, WDigest enabled), or bypasses kernel integrity (BYOVD blocklist disabled).
 - **`4.0` (High Impact):** Enables direct unauthenticated initial entry (RDP exposed without NLA), disables primary antivirus/firewall defenses (Defender offline), or grants arbitrary unmonitored code execution (Unrestricted PowerShell).
 - **`3.0` (Medium Impact):** Facilitates privilege escalation (UAC bypass, LAPS absent), facilitates lateral movement via network protocol abuse (Admin shares `C$`/`ADMIN$`), or weakens Defender tamper protection.
 - **`2.0` (Low Impact):** Decreases security observability (Event Logging disabled) or relies on legacy/physical interaction vectors (USB AutoRun enabled).
@@ -712,7 +712,7 @@ Represents the empirical frequency of occurrence across documented real-world ra
 | **`always_install_elevated`** | **4.0** | **0.6** | **3.00** | MITRE ATT&CK T1548.002; CISA KEV | **Privilege Escalation:** Registry key allows standard unprivileged users to execute MSI installers with full SYSTEM privileges. |
 | **`wdigest_enabled`** | **5.0** | **0.7** | **3.50** | Microsoft Security Advisory 2871997; MITRE T1003.001 | **Plaintext Credentials:** Forces Windows LSASS to store plaintext passwords in memory for Digest Authentication. |
 | **`smb_v1_enabled`** | **5.0** | **0.4** | **2.00** | CISA Advisory (CVE-2017-0144 - EternalBlue); WannaCry Case Study | **Wormable Entry:** Exploit vector for EternalBlue/WannaCry. High severity due to wormability, lower likelihood today due to Windows 10/11 defaults. |
-| **`backup_absent`** | **4.0** | **0.8** | **4.00** | NIST SP 800-34 Rev. 1; Sophos State of Ransomware | **Recovery Invalidation:** Absence of secondary offline/cloud backups guarantees 100% operational disruption and business coercion upon encryption. |
+| **`backup_absent`** | **4.0** | **0.8** | **4.00** | NIST SP 800-34 Rev. 1; Sophos State of Ransomware | **Recovery Invalidation:** Absence of secondary offline/cloud backups causes severe operational disruption and business coercion upon encryption. |
 | **`bitlocker_off`** | **4.0** | **0.5** | **2.50** | Verizon DBIR (Double Extortion); MITRE T1005 | **Offline Data Exfiltration Risk:** Unencrypted drives allow attackers to exfiltrate raw drive data prior to or without encryption, without needing local OS authentication. |
 | **`rdp_enabled`** | **4.0** | **0.9** | **3.60** | CISA/FBI Joint Ransomware Advisories; DBIR 2024 | **Primary Entry Vector:** Exposed Remote Desktop is the #1 initial access vector accounting for 60%+ of targeted enterprise ransomware attacks. |
 | **`nla_disabled`** | **4.0** | **0.8** | **3.20** | CISA Alert AA21-200A; MITRE T1021.001 | **Pre-Auth RDP Exploitation:** RDP without Network Level Authentication allows unauthenticated attackers to reach the Windows logon UI and execute BlueKeep/RDP exploits. |
@@ -738,7 +738,7 @@ Represents the empirical frequency of occurrence across documented real-world ra
 
 A mathematical limitation of weighted averages is that a machine could pass 26 minor checks but fail 1 critical setting (e.g., SMBv1 enabled on a Domain Controller). Mathematically, the normalized score might sit at `4.0/100`, which falls under the standard threshold for `SAFE`.
 
-To eliminate false negatives, R3P applies a **Critical Escalation Rule**:
+To reduce false negatives, R3P applies a **Critical Escalation Rule**:
 
 $$\text{Category} = \begin{cases} 
 \text{CRITICAL} & \text{if } R_{base} \ge 75.0 \\
@@ -817,8 +817,8 @@ elif z < -Z_SCORE_THRESHOLD: # -2.0
 
 | Metric / Requirement | Rolling Z-Score (R3P) | Isolation Forest | LSTM / Deep Neural Net |
 |---|---|---|---|
-| **Training Cold-Start** | Instant (Requires 3 scans) | Needs 100+ training runs | Needs 1,000+ training runs |
-| **Explainability** | 100% Deterministic Formula | Semi-opaque split trees | Black-box weights |
+| **Training Cold-Start** | Rapid (Requires 3 scans) | Needs 100+ training runs | Needs 1,000+ training runs |
+| **Explainability** | Deterministic Formula | Semi-opaque split trees | Black-box weights |
 | **Academic Defensibility** | High (Proven statistical method) | Medium | Low (Over-engineering for 1D scalar) |
 | **Computational Overhead**| $O(N)$ per scan | $O(t \cdot \psi)$ training; $O(1)$ inference | $O(N)$ GPU/CPU bound |
 
@@ -994,10 +994,10 @@ Administrative dashboard access is guarded by OAuth2 Bearer Tokens utilizing JSO
 - **Analytics Trend History:** `GET /analytics/history` (Bearer JWT) — Returns 30-day daily fleet average risk scores
 - **Daily PDF Report:** `GET /reports/daily/download` (Bearer JWT) — Returns dynamic executive PDF compliance report
 
-#### 7. Real-Time Streaming Feed
+#### 7. Streaming Feed
 - **Endpoint:** `WS /ws/live?token=<JWT_TOKEN>`
 - **Protocol:** WebSocket
-- **Payload:** Real-time JSON events (`connected`, `scan_completed`, `anomaly_detected`, `command_ack`, `host_offline`, `ping`).
+- **Payload:** Live JSON events (`connected`, `scan_completed`, `anomaly_detected`, `command_ack`, `host_offline`, `ping`).
 
 ---
 
@@ -1138,7 +1138,7 @@ pytest backend/tests/ -v
 
 ## Dashboard User Interface Architecture & Visual Components
 
-The R3P Management Console is an enterprise-grade Single-Page Application (SPA) built with **React 18** and **Vite**, engineered for high-density security operations (SecOps) situational awareness. It delivers a modern, tactile, and highly responsive user experience inspired by macOS/Apple Human Interface Guidelines, featuring dark/light dual-theming, glassmorphism, dynamic data visualizations, and millisecond-latency WebSocket event streams.
+The R3P Management Console is a Single-Page Application (SPA) built with **React 18** and **Vite**, engineered for high-density security operations (SecOps) situational awareness. It delivers a modern, tactile, and highly responsive user experience inspired by macOS/Apple Human Interface Guidelines, featuring dark/light dual-theming, glassmorphism, dynamic data visualizations, and millisecond-latency WebSocket event streams.
 
 ```
 +----------------------------------------------------------------------------------------------------+
@@ -1199,7 +1199,7 @@ The application follows an asynchronous multi-view architecture divided into a p
      - `Policies` (`<FileKey />`): Whitelist and exception rule management for business-critical configurations.
      - `About` (`<Info />`): Interactive MITRE ATT&CK parameter encyclopedia and operational playbooks.
    - **Sidebar Footer & Status Bar:**
-     - **Real-Time WebSocket Indicator:** Pulsing color dot (`green` = connected, `amber` = reconnecting, `red` = error) with "Live" label and relative timestamp since last telemetry packet (`timeSince`).
+     - **WebSocket Indicator:** Pulsing color dot (`green` = connected, `amber` = reconnecting, `red` = error) with "Live" label and relative timestamp since last telemetry packet (`timeSince`).
      - **Theme Switcher:** Ergonomic pill switch with sliding circular knob.
      - **User Profile Pill:** User avatar icon, current admin username, role descriptor, and instantaneous session sign-out button (`<LogOut />`).
 
@@ -1213,9 +1213,9 @@ The primary command screen for fleet administrators:
 
 - **Interactive Metric Widget Carousel:**
   - Five responsive summary cards: **Total Machines**, **Critical**, **High Risk**, **Low Risk**, and **Safe**.
-  - **Click-to-Filter Functionality:** Clicking any severity card instantly filters the fleet table to only show machines matching that classification (e.g., clicking the red *Critical* card isolates all actively compromised nodes). Active filter state is highlighted with a 2px colored border.
+  - **Click-to-Filter Functionality:** Clicking any severity card filters the fleet table to only show machines matching that classification (e.g., clicking the red *Critical* card isolates all actively compromised nodes). Active filter state is highlighted with a 2px colored border.
 - **Fleet Controls Bar:**
-  - **Quick Search Bar:** Real-time client-side substring matching on machine hostnames and IPv4 addresses.
+  - **Quick Search Bar:** Live client-side substring matching on machine hostnames and IPv4 addresses.
   - **Daily Report Button (`<Download />`):** Generates and downloads an executive PDF/plain-text posture briefing of the entire fleet.
   - **Preview Report Button:** Generates a synthetic sample report for verification and auditing.
   - **Manual Refresh Trigger:** Fetches an immediate snapshot of `/machines`.
@@ -1257,7 +1257,7 @@ Located in the **Network Map** tab, this view converts tabular fleet telemetry i
   - **Endpoint Leaf Nodes:** Color-coded circles representing machines matching their current risk class (Emerald = Safe, Tangerine = High Risk, Crimson = Critical).
 - **Interactive Force Simulation:**
   - Smooth d3-force physics simulation allowing zooming, panning, dragging, and node pinning.
-  - **Real-Time Visual Pulsing:** Endpoints experiencing active posture drift or anomaly streaks pulse in vivid crimson.
+  - **Visual Pulsing:** Endpoints experiencing active posture drift or anomaly streaks pulse in vivid crimson.
   - **Hover Tooltips:** Mouse hover reveals node hostname, IP address, exact risk score, and current security status.
 
 #### 4. Fleet Risk Analytics & Trend Engine
@@ -1283,7 +1283,7 @@ Located in the **Remediation** tab for fleet-wide incident containment:
     - *Enable Windows Firewall on All Profiles* (T1562.004 mitigation)
 - **Fleet-Wide Autonomous Targeting:**
   - Clicking any action initiates a confirmation safeguard, queries the backend to identify all non-compliant endpoints across the entire fleet, and queues atomic remediations in parallel.
-  - Displays instant count feedback (e.g., `Queued disable_smb_v1 for 14 vulnerable machines`).
+  - Displays count feedback (e.g., `Queued disable_smb_v1 for 14 vulnerable machines`).
 
 #### 6. Policy Exceptions & Governance
 
@@ -1312,13 +1312,13 @@ Located in the **About** tab:
 
 ---
 
-### Real-Time WebSocket Feedback & Interactive States
+### WebSocket Feedback & Interactive States
 
 The frontend maintains a continuous bidirectional WebSocket connection to `/ws/live`, providing real-time reactivity without manual browser refreshes:
 
-- **Zero-Latency State Synchronization:** When an agent finishes a scheduled or forced scan, the UI automatically updates the machine's risk score, status badges, and aggregate widget counts across all connected operator sessions.
+- **State Synchronization:** When an agent finishes a scheduled or forced scan, the UI automatically updates the machine's risk score, status badges, and aggregate widget counts across all connected operator sessions.
 - **Toast Notification System (`ToastContainer`):**
-  - **Drift Warning Toasts:** Instant slide-in notification when an endpoint registers a statistically significant risk increase.
+  - **Drift Warning Toasts:** Slide-in notification when an endpoint registers a statistically significant risk increase.
   - **Remediation Confirmations:** Success toasts when commands transition from `PENDING` to `EXECUTED` on remote endpoints.
   - **Connection State Alerts:** Alerts informing operators if the telemetry socket enters reconnect backoff.
 - **Resilient Reconnection Loop:** Automatic exponential backoff reconnection protocol maintaining SecOps situational awareness even across transient network interruptions.
