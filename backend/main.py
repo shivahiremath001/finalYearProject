@@ -588,6 +588,36 @@ def get_machine_detail(
         "active_defense_honeypot": machine.active_defense_honeypot,
     }
 
+@app.post("/commands/global")
+def global_remediation(
+    req: IssueCommand,
+    db: Session = Depends(get_db),
+    admin: models.AdminUser = Depends(get_current_admin),
+):
+    """Finds all machines that currently have this issue and queues a fix for all. Skips machines with policy exceptions."""
+    from sqlalchemy import desc
+
+    machines = db.query(models.MachineRegistry).all()
+    queued_count = 0
+    for m in machines:
+        # Skip if policy exception exists
+        exc = db.query(models.PolicyException).filter_by(hostname=m.hostname, parameter_key=req.command_key).first()
+        if exc:
+            continue
+            
+        latest = (
+            db.query(models.ConfigurationScan)
+            .filter_by(hostname=m.hostname)
+            .order_by(desc(models.ConfigurationScan.scanned_at))
+            .first()
+        )
+        if latest and getattr(latest, req.command_key, False):
+            if not crud.has_pending_or_executing(db, m.hostname, req.command_key):
+                crud.queue_command(db, m.hostname, req.command_key, issued_by=admin.username)
+                queued_count += 1
+    db.commit()
+    return {"status": "queued", "count": queued_count}
+
 
 @app.post("/commands/{hostname}", response_model=CommandHistoryOut)
 def admin_issue_command(
@@ -818,32 +848,7 @@ def delete_policy(
     return {"status": "ok"}
 
 
-@app.post("/commands/global")
-def global_remediation(
-    req: IssueCommand,
-    db: Session = Depends(get_db),
-    admin: str = Depends(get_current_admin),
-):
-    """Finds all machines that currently have this issue and queues a fix for all."""
-    # Find all machines where their *latest* scan has this parameter set to True
-    from sqlalchemy import desc
 
-    machines = db.query(models.MachineRegistry).all()
-    queued_count = 0
-    for m in machines:
-        latest = (
-            db.query(models.ConfigurationScan)
-            .filter_by(hostname=m.hostname)
-            .order_by(desc(models.ConfigurationScan.scanned_at))
-            .first()
-        )
-        if latest and getattr(latest, req.command_key, False):
-            # It has the vulnerability
-            if not crud.has_pending_or_executing(db, m.hostname, req.command_key):
-                crud.queue_command(db, m.hostname, req.command_key, issued_by=admin)
-                queued_count += 1
-    db.commit()
-    return {"status": "queued", "count": queued_count}
 
 
 @app.get("/analytics/history")

@@ -46,7 +46,7 @@
     - [Zero-Trust Remote Execution Model](#zero-trust-remote-execution-model)
     - [Command Queuing, Ack Protocol, & Audit Trail](#command-queuing-ack-protocol--audit-trail)
 12. [Security Model, Authentication, & Defense Mechanisms](#security-model-authentication--defense-mechanisms)
-    - [Agent-to-Server Mutual Auth (API Keys)](#agent-to-server-mutual-auth-api-keys)
+    - [Agent-to-Server API-Key Authentication](#agent-to-server-api-key-authentication)
     - [Admin Authentication (PBKDF2 & JWT)](#admin-authentication-pbkdf2--jwt)
     - [Network & Data Tamper Protection](#network--data-tamper-protection)
 13. [Complete API Reference Specification](#complete-api-reference-specification)
@@ -90,16 +90,16 @@ R3P fills this critical defense gap by introducing continuous posture profiling:
 
 ## Problem Statement & Threat Landscape
 
-Industry analysts project global ransomware damages to exceed **$57 billion annually by 2025** (Cybersecurity Ventures projection). Incident response telemetry from Microsoft (Digital Defense Report), CISA, and industry incident reports consistently demonstrates that the vast majority of enterprise ransomware compromises exploit **preventable security misconfigurations, weak authentication, and exposed remote access**, rather than exotic zero-day vulnerabilities:
+Industry analysts project global ransomware damages to exceed **$57 billion annually by 2025** (Cybersecurity Ventures projection). Incident response telemetry from Microsoft (Digital Defense Report), CISA, and industry incident reports consistently demonstrates that the vast majority of enterprise ransomware compromises exploit **preventable security misconfigurations, weak authentication, and exposed remote access**, often alongside N-day or zero-day vulnerabilities:
 
 | Exploited Configuration Defect | Real-World Incident Frequency | Ransomware Families Exploiting It | R3P Detection Parameter |
 |---|---|---|---|
-| **Exposed / Unprotected RDP** | 50% – 70% | LockBit, Ryuk, BlackCat, SamSam | `rdp_enabled`, `nla_disabled` |
-| **Disabled Antivirus / Defender** | 40% – 60% | Conti, REvil, Cuba, Phobos | `defender_disabled`, `tamper_protection_off` |
-| **Unrestricted Script Execution** | 30% – 50% | DarkSide, BlackBasta, Babuk | `powershell_unrestricted`, `macro_execution_enabled` |
-| **Deleted Volume Shadow Copies** | 90%+ (post-compromise) | Almost All Modern Ransomware Strains | `vss_deleted`, `mock_attack_vss_enum_succeeded` |
-| **LSASS Memory Dumping** | 60% – 80% (lateral movement) | Mimikatz, Cobalt Strike, BlackSuit | `lsass_protection_off`, `wdigest_enabled` |
-| **BYOVD (Vulnerable Driver Exploitation)** | 25% – 40% (EDR termination) | BlackByte, AvosLocker, Scattered Spider (Scatter Swine / UNC3944) | `vulnerable_driver_blocklist_enabled` |
+| **Exposed / Unprotected RDP** | Highly Prevalent | LockBit, Ryuk, BlackCat, SamSam | `rdp_enabled`, `nla_disabled` |
+| **Disabled Antivirus / Defender** | Highly Prevalent | Conti, REvil, Cuba, Phobos | `defender_disabled`, `tamper_protection_off` |
+| **Unrestricted Script Execution** | Prevalent | DarkSide, BlackBasta, Babuk | `powershell_unrestricted`, `macro_execution_enabled` |
+| **Deleted Volume Shadow Copies** | Ubiquitous (post-compromise) | Almost All Modern Ransomware Strains | `vss_deleted`, `mock_attack_vss_enum_succeeded` |
+| **LSASS Memory Dumping** | Prevalent (lateral movement) | BlackSuit, RansomHub, Phobos | `lsass_protection_off`, `wdigest_enabled` |
+| **BYOVD (Vulnerable Driver Exploitation)** | Increasingly Common (EDR termination) | BlackByte, AvosLocker, Akira, BlackByte | `vulnerable_driver_blocklist_enabled` |
 
 ### Systemic Industry Challenges Solved by R3P
 - **Static vs. Dynamic Visibility:** Standard vulnerability scanners run scheduled (weekly/monthly) scans. R3P provides periodic 60-second telemetry sampling (with immediate event-driven rescans upon local remediation) to catch configuration drift rapidly.
@@ -140,7 +140,7 @@ R3P is built on a decoupled, asynchronous client-server architecture. Telemetry 
 graph TB
     subgraph "Windows Endpoints Fleet"
         A1["R3P Agent 1<br/>collector.py<br/>(Win32/Tkinter)"]
-        A2["R3P Agent 2<br/>collector.py<br/>(Background/Service)"]
+        A2["R3P Agent 2<br/>collector.py<br/>(Background Agent)"]
         A3["R3P Agent N<br/>collector.py<br/>(Win32/Tkinter)"]
     end
 
@@ -214,7 +214,7 @@ sequenceDiagram
     Score-->>API: Returns {score: 68.5, category: "HIGH RISK", flagged: [...]}
     API->>Anomaly: detect_anomaly(db, hostname, 68.5)
     Anomaly->>DB: Query last N=10 scores for hostname
-    DB-->>Anomaly: Returns [12.0, 11.5, 12.0, 13.0, 12.5, ...]
+    DB-->>Anomaly: Returns [12.0, 11.5, 12.0, 13.0, 4.0, ...]
     Anomaly-->>API: Returns {is_anomaly: True, z_score: 4.82, direction: "spike"}
     API->>DB: Save Scan & Update Machine Record (crud.py)
     API->>WSHub: broadcast_event("scan_completed", payload)
@@ -223,8 +223,8 @@ sequenceDiagram
     
     Note over Agent, Admin: Command Remediation Flow
     Agent->>API: GET /commands/{hostname} (Poll pending fixes)
-    API-->>Agent: Return Pending Command [{id: 42, command_key: "disable_smb1"}]
-    Agent->>Agent: Verify "disable_smb1" in LOCAL AGENT_REMEDIATION Allowlist
+    API-->>Agent: Return Pending Command [{id: 42, command_key: "disable_smb_v1"}]
+    Agent->>Agent: Verify "disable_smb_v1" in LOCAL AGENT_REMEDIATION Allowlist
     Agent->>Agent: Execute PowerShell locally: Set-SmbServerConfiguration...
     Agent->>API: POST /commands/{hostname}/42/ack {status: "SUCCESS", output: "..."}
     API->>DB: Update Command Status to EXECUTED
@@ -261,7 +261,7 @@ def start_continuous_loop(self):
         # Step 4: Wait for next interval tick (60 seconds)
         for seconds_left in range(60, 0, -1):
             self.update_gui_countdown(seconds_left)
-            time.sleep(1)
+            threading.Event().wait(1)
 ```
 
 To eliminate UI freezing during long-running WMI queries or active attack simulations, data collection is parallelized across worker threads using Python's `concurrent.futures.ThreadPoolExecutor`.
@@ -312,7 +312,7 @@ To ensure **absolute, unbroken endpoint identity continuity**, R3P implements a 
 ```
 
 1. **Tier 1 (Primary Key - Windows Cryptography MachineGuid):**
-   - The agent reads `HKLM:\SOFTWARE\Microsoft\Cryptography\MachineGuid`. This is a persistent 128-bit UUID generated during Windows operating system installation. While installation-specific (and altered if an OS is freshly reinstalled or cloned without Sysprep specialization), it remains stable across IP reallocations, DHCP renewals, user logons, and network interface switches. To complement OS-level imaging edge cases, the identity pipeline also queries the motherboard hardware UUID via Win32 BIOS (`wmic csproduct get uuid`).
+   - The agent reads `HKLM:\SOFTWARE\Microsoft\Cryptography\MachineGuid`. This is a 128-bit UUID generated during Windows OS installation (note: cloned VMs without Sysprep share the same GUID). While installation-specific (and altered if an OS is freshly reinstalled or cloned without Sysprep specialization), it remains stable across IP reallocations, DHCP renewals, user logons, and network interface switches. To complement OS-level imaging edge cases, the identity pipeline also queries the motherboard hardware UUID via Win32 BIOS (`Get-CimInstance Win32_ComputerSystemProduct`).
 2. **Tier 2 (Secondary Fallback - Primary Active Interface MAC):**
    - If registry GUID access is restricted, the backend queries the database for an existing machine registered with the primary active network interface's hardware MAC address.
 3. **Tier 3 (Tertiary Fallback - System Hostname):**
@@ -326,7 +326,7 @@ Unlike passive audit tools that rely solely on reading static registry keys (whi
 
 1. **VSS Enumeration Reconnaissance Probe (`mock_attack_vss_enum_succeeded`):**
    - *Mechanism:* The agent issues a read-only PowerShell/WMI query for `Win32_ShadowCopy` instances.
-   - *Threat Simulation:* Ransomware operators frequently conduct shadow copy reconnaissance (an operational precursor to MITRE ATT&CK T1490 / T1082) to inventory restore points prior to deletion.
+   - *Threat Simulation:* Ransomware operators frequently conduct shadow copy reconnaissance (an operational precursor to MITRE ATT&CK T1047 / T1082) to inventory restore points prior to deletion.
    - *Evaluation:* If the read-only query executes without restriction, the probe outcome is recorded as allowed (`mock_attack_vss_enum_succeeded = True`), contributing to the risk score. If endpoint protection or WMI auditing intercepts/blocks the reconnaissance query, the probe is recorded as blocked. *Note: Validating that enumeration was blocked verifies this specific reconnaissance safeguard; it does not in itself prove that shadow copy deletion would be thwarted.*
 2. **Dual-Probe Mass File Manipulation & Rename Attack (`mock_attack_mass_rename_succeeded`):**
    Ransomware behavior is characterized by rapid, unconstrained modification and batch file renaming. Rather than relying on a naive `%TEMP%`-only script (which default Windows Defender ignores because `%TEMP%` is not a protected user document directory), R3P implements a **Dual-Probe Architecture**:
@@ -439,7 +439,7 @@ This ensures that an active attack in progress is never masked by a low configur
 
 **MITRE Framework Alignment:**
 - **Adversary Trigger — MITRE ATT&CK T1486 (Data Encrypted for Impact):** The tripwire is tripped by unauthorized file content modification or bulk encryption renaming in shared user paths.
-- **Defensive Mechanism — MITRE D3FEND (D3-DT: Decoy File) & MITRE Engage (EAC0018: Honeytoken):** Rather than an offensive technique, the bait file functions as a deception asset deployed in standard user directories to provide high-confidence, early-warning tripwire signals before mass encryption propagates.
+- **Defensive Mechanism — MITRE D3FEND (D3-DF: Decoy File) & MITRE Engage (MITRE Engage: Decoy):** Rather than an offensive technique, the bait file functions as a deception asset deployed in standard user directories to provide high-confidence, early-warning tripwire signals before mass encryption propagates.
 
 **Academic Justification (Deception Technology):**
 Honeytoken-based detection is a well-established intrusion detection methodology:
@@ -462,19 +462,19 @@ Honeytoken-based detection is a well-established intrusion detection methodology
 To maintain posture awareness and endpoint visibility when machines operate off-grid (e.g., roaming laptops, disconnected field units, or during enterprise network partitions), R3P features an **Autonomous Disconnected Mode** within `collector.py`:
 
 1. **Dual-Mode Scoring Strategy (Server-Authoritative vs. Local Estimate):**
-   - **Online Mode (Server-Authoritative):** When the backend is reachable via HTTPS, raw telemetry is ingested by `POST /ingest`. The central backend computes the authoritative risk score, evaluates fleet-wide rolling Z-scores, and reconciles admin-approved policy exceptions from the database.
+   - **Online Mode (Server-Authoritative):** When the backend is reachable via HTTPS, raw telemetry is ingested by `POST /ingest`. The central backend computes the authoritative risk score, evaluates per-host rolling Z-scores, and reconciles admin-approved policy exceptions from the database.
    - **Offline Mode (Local Estimate):** If network transmission fails (`send_telemetry()` returns `None`), the agent automatically triggers `build_local_scan_result(data)`. Instead of suppressing scores or displaying a blank screen, the agent executes a local instance of the mathematical scoring algorithm.
 
 2. **Mathematical Parity in Disconnected Execution:**
    - The agent maintains local copies of the 27-parameter severity weights (`LOCAL_SEVERITY_WEIGHTS`) and likelihood weights (`LOCAL_LIKELIHOOD_WEIGHTS`).
    - Normalization relies on the dynamic baseline ceiling:
      $$\text{Score}_{\text{local}} = \min\left(100.0, \frac{\sum (S_i \times L_i \times C_{\text{baseline}})}{\text{Risk}_{\max}} \times 100.0\right)$$
-   - Adheres to the identical **Failsafe Escalation Rule**: Any critical weight-5.0 vulnerability (such as active SMBv1, disabled Defender, or unblocked mock attack) guarantees a minimum score floor of 50.0 (`HIGH RISK`).
+   - Adheres to the identical **Failsafe Escalation Rule**: Any critical weight-5.0 vulnerability (such as active SMBv1, disabled Defender, or unblocked mock attack) guarantees a minimum score floor of 50.0 and raises the classification to HIGH RISK (`HIGH RISK`).
    - Categorizes risk severity bands: $\ge 75 \to \text{CRITICAL}$, $\ge 50 \to \text{HIGH RISK}$, $\ge 25 \to \text{LOW RISK}$, $< 25 \to \text{SAFE}$.
 
 3. **User Interface Transparency & SOC Integrity Disclaimers:**
    - To adhere to Zero-Trust governance and avoid misleading operators into believing local calculations override centralized enterprise policy, the agent GUI displays explicit visual cues:
-     - **Score Indicator:** `Estimated Score: 68.5 / 100 (Local Offline Estimate)`
+     - **Score Indicator:** `Estimated Score: 72.0 / 100 (Local Offline Estimate)`
      - **Telemetry Status:** `Scan complete on this device — X findings; not synced to server`
      - **Notice Banner:** *"This scan is shown from local checks and has not reached the server. The displayed score is a local estimate and unverified by the SOC; server-calculated asset criticality and policy exceptions are unavailable offline."*
    - Once server communication resumes, the authoritative backend calculation seamlessly supersedes the local estimate and commits the verified scan to the database.
@@ -535,7 +535,7 @@ Every telemetry parameter monitored by R3P maps directly to a specific Windows c
 | 10 | `always_install_elevated` | Boolean | Registry `AlwaysInstallElevated` == 1 | Standard users installing MSI packages with SYSTEM rights. |
 | 11 | `defender_disabled` | Boolean | WMI `DisableRealtimeMonitoring` | Primary Windows AV disabled by malware or admin error. |
 | 12 | `firewall_disabled` | Boolean | `Get-NetFirewallProfile` status check | System firewall disabled exposing all local ports. |
-| 13 | `tamper_protection_off` | Boolean | Defender registry key `DisableTamperProtection` | Defender registry keys unlocked for modification. |
+| 13 | `tamper_protection_off` | Boolean | Defender registry key `Windows Defender\\Features\\TamperProtection` | Defender registry keys unlocked for modification. |
 | 14 | `event_logging_disabled` | Boolean | Service state of `EventLog` | Disabled audit logs masking attacker activity. |
 | 15 | `vulnerable_driver_blocklist_enabled` | Boolean | Registry `VulnerableDriverBlocklistEnable` | Missing BYOVD blocklist allowing drivers to kill EDR. |
 | 16 | `hvci_enabled` | Boolean | WMI `Win32_DeviceGuard` Hypervisor state | Hypervisor-protected Code Integrity disabled. |
@@ -573,7 +573,7 @@ Every telemetry parameter is linked to the official **MITRE ATT&CK Enterprise Fr
 [Lateral Move] ──────► T1003.001 (OS Credential Dumping - LSASS Memory)
                  ──────► T1021.002 (SMB/Windows Admin Shares C$/ADMIN$)
 
-[Impact/Recov] ──────► T1490 (Inhibit System Recovery - VSS Deletion)
+[Impact/Recov] ──────► T1047 (Inhibit System Recovery - VSS Deletion)
                  ──────► T1486 (Data Encrypted for Impact - Mass File Rename)
 ```
 
@@ -601,10 +601,10 @@ Every telemetry parameter is linked to the official **MITRE ATT&CK Enterprise Fr
 | Lateral Movement | `guest_account_active` | **T1078.001** | Valid Accounts: Default Accounts |
 | Lateral Movement | `wdigest_enabled` | **T1003.001** | OS Credential Dumping: LSASS |
 | Lateral Movement | `laps_absent` | **T1003** | OS Credential Dumping |
-| Recovery Prevention | `vss_deleted` | **T1490** | Inhibit System Recovery |
-| Recovery Prevention | `backup_absent` | **T1490** | Inhibit System Recovery |
+| Recovery Prevention | `vss_deleted` | **T1047** | Inhibit System Recovery |
+| Recovery Prevention | `backup_absent` | **T1047** | Inhibit System Recovery |
 | Recovery Prevention | `bitlocker_off` | **T1005** | Data from Local System (offline data theft enabler) |
-| Active Validation | `mock_attack_vss_enum_succeeded` | **T1490** | Inhibit System Recovery |
+| Active Validation | `mock_attack_vss_enum_succeeded` | **T1047** | Inhibit System Recovery |
 | Active Validation | `mock_attack_mass_rename_succeeded` | **T1486** | Data Encrypted for Impact |
 
 ---
@@ -647,16 +647,16 @@ SEVERITY_WEIGHTS: dict[str, float] = {
     # Entry Vector
     "smb_v1_enabled": 5.0, "rdp_enabled": 4.0, "autorun_enabled": 2.0, "open_network_shares": 3.0, "nla_disabled": 4.0,
     # Execution
-    "macro_execution_enabled": 4.0, "powershell_unrestricted": 4.0, "uac_disabled": 3.0, "applocker_absent": 2.0, "always_install_elevated": 5.0,
+    "macro_execution_enabled": 4.0, "powershell_unrestricted": 4.0, "uac_disabled": 3.0, "applocker_absent": 2.0, "always_install_elevated": 4.0,
     # Evasion & Persistence
     "defender_disabled": 4.0, "firewall_disabled": 4.0, "tamper_protection_off": 3.0, "event_logging_disabled": 2.0,
     "vulnerable_driver_blocklist_enabled": 5.0, "hvci_enabled": 4.0, "asr_rules_configured": 4.0,
     # Lateral Movement
     "admin_shares_enabled": 3.0, "lsass_protection_off": 5.0, "guest_account_active": 2.0, "wdigest_enabled": 5.0, "laps_absent": 3.0,
     # Recovery Prevention
-    "vss_deleted": 5.0, "backup_absent": 5.0, "bitlocker_off": 5.0,
+    "vss_deleted": 5.0, "backup_absent": 4.0, "bitlocker_off": 4.0,
     # Phase 3 Active Validation
-    "mock_attack_vss_enum_succeeded": 5.0, "mock_attack_mass_rename_succeeded": 5.0,
+    "mock_attack_vss_enum_succeeded": 4.0, "mock_attack_mass_rename_succeeded": 5.0,
 }
 
 LIKELIHOOD_WEIGHTS: dict[str, float] = {
@@ -693,10 +693,10 @@ Measures the maximum worst-case blast radius and systemic impact on host confide
 
 ##### B. Exploitation Likelihood Weight ($L(p_i) \in [0.1, 1.0]$)
 Represents the empirical frequency of occurrence across documented real-world ransomware attack chains:
-- **`1.0` (Ubiquitous - 90%+ Prevalence):** Used in virtually every modern ransomware incident (e.g., `vss_deleted` via `vssadmin.exe`, `powershell_unrestricted` for initial payload execution).
-- **`0.8 – 0.9` (Prevalent - 50% – 85% Prevalence):** Dominant initial access vectors and EDR evasion tactics (e.g., exposed RDP, LSASS Mimikatz memory scraping, Defender termination, BYOVD kernel driver loading).
-- **`0.5 – 0.7` (Moderate - 25% – 49% Prevalence):** Standard lateral movement and privilege escalation techniques (e.g., open SMB shares, UAC bypass, unencrypted disk volumes).
-- **`0.3 – 0.4` (Low - <25% Prevalence):** Legacy protocols or niche attack paths (e.g., SMBv1 in modern Win 11 builds, USB AutoRun).
+- **`1.0` (Ubiquitous Prevalence):** Used in virtually every modern ransomware incident (e.g., `vss_deleted` via `vssadmin.exe`, `powershell_unrestricted` for initial payload execution).
+- **`0.8 – 0.9` (Highly Prevalent):** Dominant initial access vectors and EDR evasion tactics (e.g., exposed RDP, LSASS Mimikatz memory scraping, Defender termination, BYOVD kernel driver loading).
+- **`0.5 – 0.7` (Moderate Prevalence):** Standard lateral movement and privilege escalation techniques (e.g., open SMB shares, UAC bypass, unencrypted disk volumes).
+- **`0.3 – 0.4` (Low Prevalence):** Legacy protocols or niche attack paths (e.g., SMBv1 in modern Win 11 builds, USB AutoRun).
 
 ---
 
@@ -704,16 +704,16 @@ Represents the empirical frequency of occurrence across documented real-world ra
 
 | Telemetry Parameter | $S(p_i)$ | $L(p_i)$ | Combined Risk Factor ($S \times L$) | Primary Threat Intelligence Citation | Real-World Attack Chain Rationale |
 |---|:---:|:---:|:---:|---|---|
-| **`vss_deleted`** | **5.0** | **1.0** | **5.00** | CISA Advisory AA23-075A (LockBit 3.0); FBI Flash Reports | **Recovery Prevention:** 90%+ of ransomware strains (LockBit, BlackCat, Akira, WannaCry) execute `vssadmin delete shadows /all /quiet` prior to encryption to destroy local system restore capability. |
-| **`mock_attack_vss_enum_succeeded`** | **5.0** | **1.0** | **5.00** | MITRE ATT&CK T1490; Sophos Incident Audit | **Active Validation Signal:** The read-only VSS inventory query was allowed. This does not show whether shadow-copy deletion would be permitted. |
+| **`vss_deleted`** | **5.0** | **1.0** | **5.00** | CISA Advisory AA23-075A (LockBit 3.0); FBI Flash Reports | **Recovery Prevention:** Ubiquitous across ransomware strains (LockBit, BlackCat, Akira, WannaCry) which execute `vssadmin delete shadows /all /quiet` prior to encryption to destroy local system restore capability. |
+| **`mock_attack_vss_enum_succeeded`** | **4.0** | **1.0** | **5.00** | MITRE ATT&CK T1047; Sophos Incident Audit | **Active Validation Signal:** The read-only VSS inventory query was allowed. This does not show whether shadow-copy deletion would be permitted. |
 | **`mock_attack_mass_rename_succeeded`** | **5.0** | **1.0** | **5.00** | MITRE ATT&CK T1486; Microsoft MDDR | **Active Validation Defect:** Indicates behavioral anti-ransomware shield failed to intercept rapid file renaming batch operations (the final encryption execution phase). |
 | **`lsass_protection_off`** | **5.0** | **0.9** | **4.50** | Verizon DBIR §3.2 (Credential Access); MITRE T1003.001 | **Credential Theft:** LSASS without `RunAsPPL` enables Mimikatz and LSASS memory dumping, allowing attackers to harvest plaintext domain admin credentials for fleet-wide compromise. |
 | **`vulnerable_driver_blocklist_enabled`** | **5.0** | **0.9** | **4.50** | CISA Alert AA22-321A (Hive Ransomware); ESET BYOVD Report | **BYOVD (Bring Your Own Vulnerable Driver):** Attackers drop signed legacy drivers (e.g., `gdrv.sys`) to disable EDR processes from kernel mode. Blocklist missing = total EDR bypass. |
-| **`always_install_elevated`** | **5.0** | **0.6** | **3.00** | MITRE ATT&CK T1548.002; CISA KEV | **Privilege Escalation:** Registry key allows standard unprivileged users to execute MSI installers with full SYSTEM privileges. |
+| **`always_install_elevated`** | **4.0** | **0.6** | **3.00** | MITRE ATT&CK T1548.002; CISA KEV | **Privilege Escalation:** Registry key allows standard unprivileged users to execute MSI installers with full SYSTEM privileges. |
 | **`wdigest_enabled`** | **5.0** | **0.7** | **3.50** | Microsoft Security Advisory 2871997; MITRE T1003.001 | **Plaintext Credentials:** Forces Windows LSASS to store plaintext passwords in memory for Digest Authentication. |
-| **`smb_v1_enabled`** | **5.0** | **0.4** | **2.00** | CISA KEV (CVE-2017-0144 - EternalBlue); WannaCry Case Study | **Wormable Entry:** Exploit vector for EternalBlue/WannaCry. High severity due to wormability, lower likelihood today due to Windows 10/11 defaults. |
-| **`backup_absent`** | **5.0** | **0.8** | **4.00** | NIST SP 800-34 Rev. 1; Sophos State of Ransomware | **Recovery Invalidation:** Absence of secondary offline/cloud backups guarantees 100% operational disruption and business coercion upon encryption. |
-| **`bitlocker_off`** | **5.0** | **0.5** | **2.50** | Verizon DBIR (Double Extortion); MITRE T1005 | **Offline Data Exfiltration Risk:** Unencrypted drives allow attackers to exfiltrate raw drive data prior to or without encryption, without needing local OS authentication. |
+| **`smb_v1_enabled`** | **5.0** | **0.4** | **2.00** | CISA Advisory (CVE-2017-0144 - EternalBlue); WannaCry Case Study | **Wormable Entry:** Exploit vector for EternalBlue/WannaCry. High severity due to wormability, lower likelihood today due to Windows 10/11 defaults. |
+| **`backup_absent`** | **4.0** | **0.8** | **4.00** | NIST SP 800-34 Rev. 1; Sophos State of Ransomware | **Recovery Invalidation:** Absence of secondary offline/cloud backups guarantees 100% operational disruption and business coercion upon encryption. |
+| **`bitlocker_off`** | **4.0** | **0.5** | **2.50** | Verizon DBIR (Double Extortion); MITRE T1005 | **Offline Data Exfiltration Risk:** Unencrypted drives allow attackers to exfiltrate raw drive data prior to or without encryption, without needing local OS authentication. |
 | **`rdp_enabled`** | **4.0** | **0.9** | **3.60** | CISA/FBI Joint Ransomware Advisories; DBIR 2024 | **Primary Entry Vector:** Exposed Remote Desktop is the #1 initial access vector accounting for 60%+ of targeted enterprise ransomware attacks. |
 | **`nla_disabled`** | **4.0** | **0.8** | **3.20** | CISA Alert AA21-200A; MITRE T1021.001 | **Pre-Auth RDP Exploitation:** RDP without Network Level Authentication allows unauthenticated attackers to reach the Windows logon UI and execute BlueKeep/RDP exploits. |
 | **`powershell_unrestricted`** | **4.0** | **1.0** | **4.00** | Red Canary Threat Detection Report 2024; MITRE T1059.001 (Command and Scripting Interpreter: PowerShell) | **Execution Engine:** PowerShell is a primary living-off-the-land utility used to download stagers and launch scripts. *Note: Per Microsoft documentation, ExecutionPolicy is an operational safety guardrail to prevent accidental script execution, not an isolation boundary (as attackers can use `-ExecutionPolicy Bypass`). It is tracked here as an indicator of basic script execution hygiene.* |
@@ -736,7 +736,7 @@ Represents the empirical frequency of occurrence across documented real-world ra
 
 ### The Failsafe Critical Escalation Rule
 
-A mathematical limitation of weighted averages is that a machine could pass 26 minor checks but fail 1 critical setting (e.g., SMBv1 enabled on a Domain Controller). Mathematically, the normalized score might sit at `12.5/100`, which falls under the standard threshold for `SAFE`.
+A mathematical limitation of weighted averages is that a machine could pass 26 minor checks but fail 1 critical setting (e.g., SMBv1 enabled on a Domain Controller). Mathematically, the normalized score might sit at `4.0/100`, which falls under the standard threshold for `SAFE`.
 
 To eliminate false negatives, R3P applies a **Critical Escalation Rule**:
 
@@ -757,13 +757,13 @@ Assume a host acting as a **Domain Controller** ($C_{asset} = 1.6$) has the foll
 1. **Calculate Raw Itemized Contributions:**
    - $\text{Item}_1 (\text{rdp}) = 1 \times 4.0 \times 0.9 \times 1.6 = 5.76$
    - $\text{Item}_2 (\text{lsass}) = 1 \times 5.0 \times 0.7 \times 1.6 = 5.60$
-   - $\text{Risk}_{raw} = 5.76 + 5.60 = 11.36$
+   - $\text{Risk}_{raw} = 5.76 + 7.20 = 12.96$
 2. **Compute Baseline Maximum Risk:**
-   - Assume $\text{Risk}_{max} = 70.3$ across all baseline parameters.
+   - Assume $\text{Risk}_{max} = 80.3$ across all baseline parameters.
 3. **Calculate Normalized Score:**
-   - $R = (11.36 / 70.3) \times 100 = 16.16\%$
+   - $R = (12.96 / 80.3) \times 100 = 16.14\%$
 4. **Apply Classification Rules:**
-   - Raw score $16.16\%$ is mathematically $< 25.0$ (`SAFE`).
+   - Raw score $16.14\%$ is mathematically $< 25.0$ (`SAFE`).
    - *Escalation Test:* `lsass_protection_off` has $S = 5.0$ (Critical) and $f = 1$.
    - **Final Result:** The score is mathematically forced from `SAFE` to **`HIGH RISK`**, preventing a false negative.
 
@@ -820,7 +820,7 @@ elif z < -Z_SCORE_THRESHOLD: # -2.0
 | **Training Cold-Start** | Instant (Requires 3 scans) | Needs 100+ training runs | Needs 1,000+ training runs |
 | **Explainability** | 100% Deterministic Formula | Semi-opaque split trees | Black-box weights |
 | **Academic Defensibility** | High (Proven statistical method) | Medium | Low (Over-engineering for 1D scalar) |
-| **Computational Overhead**| $O(N)$ per scan | $O(t \cdot \psi)$ training; $O(1)$ inference | $O(N^2)$ GPU/CPU bound |
+| **Computational Overhead**| $O(N)$ per scan | $O(t \cdot \psi)$ training; $O(1)$ inference | $O(N)$ GPU/CPU bound |
 
 ---
 
@@ -835,14 +835,14 @@ R3P isolates backend administrative actions from host OS execution. Network mess
 │ Admin Clicks "Fix SMB"  │
 └────────────┬────────────┘
              │
-             ▼ REST: POST /commands/{host} {command_key: "disable_smb1"}
+             ▼ REST: POST /commands/{host} {command_key: "disable_smb_v1"}
 ┌─────────────────────────┐
 │ FastAPI Backend Server  │ ── Validate key in REMEDIATION_COMMANDS
 └────────────┬────────────┘
              │
              ▼ Database: Queue pending command with Status = "PENDING"
 ┌─────────────────────────┐
-│ Agent Polls /commands   │ ── Receives {"id": 101, "command_key": "disable_smb1"}
+│ Agent Polls /commands   │ ── Receives {"id": 101, "command_key": "disable_smb_v1"}
 └────────────┬────────────┘
              │
              ▼ Validate key in local AGENT_REMEDIATION dict
@@ -867,13 +867,13 @@ Remediation commands pass through a formal state lifecycle in SQLite (`remediati
 Every command execution maintains an immutable audit trail recording:
 - Target `hostname` and administrative `issuer_id` (JWT user).
 - `issued_at` timestamp and target `command_key`.
-- Final `status` string, execution `output_log`, and completion `ack_at` timestamp.
+- Final `status` string, execution `output`, and completion `ack_at` timestamp.
 
 ---
 
 ## Security Model, Authentication, & Defense Mechanisms
 
-### Agent-to-Server Mutual Auth (API Keys)
+### Agent-to-Server API-Key Authentication
 
 Endpoints authenticate via a shared system API key passed in HTTP request headers (`X-API-Key`). The backend rejects requests missing or failing validation against `AGENT_API_KEY` with HTTP 403 Forbidden.
 
@@ -881,14 +881,14 @@ Endpoints authenticate via a shared system API key passed in HTTP request header
 
 Administrative dashboard access is guarded by OAuth2 Bearer Tokens utilizing JSON Web Tokens (JWT):
 
-1. **Password Hashing:** Administrative credentials are hashed using **PBKDF2-HMAC-SHA-256** with a 16-byte random salt across 100,000 iterations (note: OWASP 2025 recommends 310,000+ iterations for new deployments; this is a known upgrade path).
+1. **Password Hashing:** Administrative credentials are hashed using **PBKDF2-HMAC-SHA-256** with a 16-byte random salt across 600,000 iterations.
 2. **JWT Session Lifecycle:** Successful login via `POST /admin/login` yields a signed JWT token containing claims (`sub`, `exp`, `iat`).
 3. **Cryptographic Signing:** Tokens are signed using **HMAC-SHA256** driven by a secret key (`SECRET_KEY`). Requests to administrative routes validate token signature and expiration.
 
 ### Network & Data Tamper Protection
 - **No Remote Code Execution (RCE):** The restriction of remote commands to local allowlist keys blocks arbitrary command injection.
-- **SQL Injection Prevention:** SQLAlchemy ORM compiles parameterized SQL statements, eliminating raw string concatenation and SQL injection vectors.
-- **XSS Mitigation:** React auto-escapes rendered variables within the DOM.
+- **SQL Injection Mitigation:** SQLAlchemy ORM compiles parameterized SQL statements, helping to prevent raw string concatenation and traditional SQL injection vectors.
+- **XSS Mitigation:** React auto-escapes rendered variables within the DOM, reducing the risk of many forms of cross-site scripting (though it does not protect every unsafe HTML-rendering path).
 
 ---
 
@@ -905,7 +905,7 @@ Administrative dashboard access is guarded by OAuth2 Bearer Tokens utilizing JSO
   {
     "status": "success",
     "hostname": "WIN-DC01",
-    "risk_score": 68.5,
+    "risk_score": 72.0,
     "risk_classification": "HIGH RISK",
     "is_anomaly": true,
     "z_score": 2.45
@@ -924,7 +924,7 @@ Administrative dashboard access is guarded by OAuth2 Bearer Tokens utilizing JSO
   ```json
   {
     "status": "SUCCESS",
-    "output_log": "SMBv1 disabled successfully."
+    "output": "SMBv1 disabled successfully."
   }
   ```
 
@@ -953,7 +953,7 @@ Administrative dashboard access is guarded by OAuth2 Bearer Tokens utilizing JSO
 - **Request Body:**
   ```json
   {
-    "command_key": "disable_smb1"
+    "command_key": "disable_smb_v1"
   }
   ```
 
@@ -968,7 +968,7 @@ Administrative dashboard access is guarded by OAuth2 Bearer Tokens utilizing JSO
     "mac_address": "00:1A:2B:3C:4D:5E",
     "machine_guid": "a1b2c3d4-e5f6-7890-abcd-ef0123456789",
     "os_version": "Windows 11 Pro 23H2",
-    "risk_score": 68.5,
+    "risk_score": 72.0,
     "risk_class": "HIGH RISK",
     "trend": "up",
     "flagged": {
@@ -976,7 +976,7 @@ Administrative dashboard access is guarded by OAuth2 Bearer Tokens utilizing JSO
       "Evasion & Persistence": ["tamper_protection_off"]
     },
     "mitre_hits": [
-      { "technique_id": "T1490", "technique_name": "Inhibit System Recovery", "tactic": "Impact" }
+      { "technique_id": "T1047", "technique_name": "Inhibit System Recovery", "tactic": "Impact" }
     ],
     "anomaly": { "is_anomaly": true, "z_score": 2.45 },
     "anomaly_streak": 2,
@@ -990,7 +990,7 @@ Administrative dashboard access is guarded by OAuth2 Bearer Tokens utilizing JSO
 - **Delete Exception:** `DELETE /policies/{id}` (Bearer JWT)
 
 #### 6. Enterprise Global Remediation & Analytics
-- **Global Fleet Fix:** `POST /commands/global` (Bearer JWT) — Payload: `{"command_key": "disable_smb1"}` (queues fix on all currently non-compliant machines)
+- **Global Fleet Fix:** `POST /commands/global` (Bearer JWT) — Payload: `{"command_key": "disable_smb_v1"}` (queues fix on all currently non-compliant machines)
 - **Analytics Trend History:** `GET /analytics/history` (Bearer JWT) — Returns 30-day daily fleet average risk scores
 - **Daily PDF Report:** `GET /reports/daily/download` (Bearer JWT) — Returns dynamic executive PDF compliance report
 
@@ -1094,16 +1094,16 @@ pytest backend/tests/ -v
 > **Answer:** "Our anomaly signal is univariate—a single scalar risk score (0–100) computed over time for each endpoint. Rolling Z-score is the mathematically standard, time-tested approach for univariate anomaly detection. It requires zero training data cold-start, operates from scan #3 onwards, executes in $O(N)$ time, and is 100% explainable. Neural networks for a 1D scalar signal represent unnecessary over-engineering that introduces black-box opacity without improving detection accuracy."
 
 ### Q3: How do you protect the remediation engine against unauthorized remote command execution?
-> **Answer:** "We implement a Zero-Trust Allowlist model. Raw commands or shell scripts are **never transmitted over the network**. The backend only sends a pre-validated string identifier key (e.g., `disable_smb1`). The endpoint agent validates this key against its own local, hard-coded dictionary allowlist before executing the mapped PowerShell command. Even if an attacker intercepts or manipulates network traffic, they cannot inject arbitrary code into endpoints."
+> **Answer:** "We implement a Zero-Trust Allowlist model. Raw commands or shell scripts are **never transmitted over the network**. The backend only sends a pre-validated string identifier key (e.g., `disable_smb_v1`). The endpoint agent validates this key against its own local, hard-coded dictionary allowlist before executing the mapped PowerShell command. Even if an attacker intercepts or manipulates network traffic, they can only trigger allowlisted actions into endpoints."
 
 ### Q4: Explain how your scoring engine handles a machine with low overall score but one critical flaw.
 > **Answer:** "This is addressed by our **Critical Escalation Failsafe Rule**. In a normalized aggregate model, a machine failing only 1 out of 27 checks might mathematically yield a score around 5%, which standard thresholding would misclassify as `SAFE`. However, if that single failed check carries a Severity Weight of 5.0 (e.g., SMBv1 active or LSASS protection off), our scoring engine overrides the numerical calculation and immediately escalates the asset classification to at least `HIGH RISK`."
 
 ### Q5: How does the system handle high-concurrency database writes with multiple endpoints scanning simultaneously?
-> **Answer:** "Our SQLite database operates under **Write-Ahead Logging (WAL)** mode enabled via SQLAlchemy connection pragmas. Standard SQLite locks the entire database file on writes, causing lock contention. WAL mode decouples reads from writes: read queries operate concurrently against the main database file while writes append to the WAL log. This enables throughput exceeding 100 writes per second, easily accommodating our target fleet density."
+> **Answer:** "Our SQLite database operates under **Write-Ahead Logging (WAL)** mode enabled via SQLAlchemy connection pragmas. Standard SQLite locks the entire database file on writes, causing lock contention. WAL mode decouples reads from writes: read queries operate concurrently against the main database file while writes append to the WAL log. This architecture is designed to accommodate our target fleet density."
 
 ### Q6: How does R3P uniquely identify endpoints across IP changes, DHCP roaming, and MAC address randomization?
-> **Answer:** "R3P decouples network addressing from endpoint identity. Instead of relying on volatile IPv4 addresses (which change on DHCP renewal or Wi-Fi roaming) or MAC addresses (which randomize on Windows 10/11 Wi-Fi), R3P anchors identity to the immutable Windows Cryptography `MachineGuid` stored in `HKLM:\SOFTWARE\Microsoft\Cryptography\MachineGuid` (falling back to motherboard BIOS UUID). When an existing machine connects from a new subnet, the backend recognizes its persistent GUID, updates its network metadata in-place, and preserves its complete longitudinal score history and rolling Z-score anomaly window without creating duplicate phantom records."
+> **Answer:** "R3P decouples network addressing from endpoint identity. Instead of relying on volatile IPv4 addresses (which change on DHCP renewal or Wi-Fi roaming) or MAC addresses (which can randomize on Windows Wi-Fi if enabled), R3P anchors identity to the installation-specific Windows Cryptography `MachineGuid` stored in `HKLM:\SOFTWARE\Microsoft\Cryptography\MachineGuid` (falling back to motherboard hardware MAC address, then hostname). When an existing machine connects from a new subnet, the backend recognizes its persistent GUID, updates its network metadata in-place, and preserves its complete longitudinal score history and rolling Z-score anomaly window without creating duplicate phantom records."
 
 ### Q7: What is the Dual-Probe Active Validation architecture, and how does it test ransomware defense safely?
 > **Answer:** "Active Validation does not merely read static registry toggles; it executes real attack behavior to verify runtime defensive interception. Because Windows Defender excludes `%TEMP%` from Controlled Folder Access, testing solely in temporary folders creates false negatives. R3P's **Dual-Probe Engine** combines:
@@ -1152,7 +1152,7 @@ The R3P Management Console is an enterprise-grade Single-Page Application (SPA) 
 | (o) Remediation   |--------------------------------------------------------------------------------|
 | (o) Policies      | DESKTOP-SEC01  192.168.1.105   84.2/100    [ CRITICAL ]    ▲ Spike   Just now  --> |
 | (o) About         | WINSRV-DC01    192.168.1.10    72.0/100    [ HIGH RISK]    --        2m ago    --> |
-|                   | WORKSTATION-04 192.168.1.142   12.5/100    [ SAFE     ]    --        12m ago   --> |
+|                   | WORKSTATION-04 192.168.1.142   4.0/100    [ SAFE     ]    --        12m ago   --> |
 |-------------------|--------------------------------------------------------------------------------|
 | Live: ● Connected | SLIDE-OUT DRILLDOWN DRAWER (When row selected):                                |
 | Admin: SHIVA (Out)| - Radial Score Gauge (0-100) + Drift Streak Badge                              |
@@ -1218,7 +1218,7 @@ The primary command screen for fleet administrators:
   - **Quick Search Bar:** Real-time client-side substring matching on machine hostnames and IPv4 addresses.
   - **Daily Report Button (`<Download />`):** Generates and downloads an executive PDF/plain-text posture briefing of the entire fleet.
   - **Preview Report Button:** Generates a synthetic sample report for verification and auditing.
-  - **Manual Refresh Trigger:** Fetches an immediate snapshot of `/api/v1/machines`.
+  - **Manual Refresh Trigger:** Fetches an immediate snapshot of `/machines`.
 - **High-Density Fleet Data Table:**
   - Columns: **Status**, **Hostname**, **IP Address**, **OS Version**, **Risk Score (0–100 Progress Bar)**, **Risk Classification (Badge)**, **Z-Score Anomaly Status**, and **Last Telemetry Check-in**.
   - **Interactive Sorting:** Clicking table headers toggles ascending/descending sorts on risk score, hostname, or timestamp.
@@ -1243,9 +1243,9 @@ Clicking any machine row triggers a smooth slide-in modal drawer displaying deep
   - Groups detected misconfigurations into standard attack phases: *Initial Access*, *Execution & Persistence*, *Privilege Escalation*, *Defense Evasion*, and *Impact & Recovery*.
   - Displays severity dot indicators and proportional horizontal progress bars.
   - **Contextual Fix Action Buttons (`⚡ Fix`):** For each flagged check with an automated remedy, an inline fix button triggers single-click execution. Upon execution, the button renders an animated spinning loader (`<Loader2 />`) and transitions to an immutable "Executed" status.
-  - **MITRE ATT&CK Tagging:** Displays clickable MITRE technique IDs (e.g., `T1059.001`, `T1490`) mapped to the official ATT&CK matrix.
+  - **MITRE ATT&CK Tagging:** Displays clickable MITRE technique IDs (e.g., `T1059.001`, `T1047`) mapped to the official ATT&CK matrix.
 - **Remediation Audit Log:**
-  - Embedded audit trail table listing recent commands issued to the machine, current status (`PENDING`, `EXECUTING`, `COMPLETED`, `FAILED`), execution latency, and raw PowerShell stdout/stderr logs.
+  - Embedded audit trail table listing recent commands issued to the machine, current status (`PENDING`, `DELIVERED`, `EXECUTED`, `FAILED`), execution latency, and raw PowerShell stdout/stderr logs.
 
 #### 3. Interactive Network Topology Map
 
@@ -1319,7 +1319,7 @@ The frontend maintains a continuous bidirectional WebSocket connection to `/ws/l
 - **Zero-Latency State Synchronization:** When an agent finishes a scheduled or forced scan, the UI automatically updates the machine's risk score, status badges, and aggregate widget counts across all connected operator sessions.
 - **Toast Notification System (`ToastContainer`):**
   - **Drift Warning Toasts:** Instant slide-in notification when an endpoint registers a statistically significant risk increase.
-  - **Remediation Confirmations:** Success toasts when commands transition from `PENDING` to `COMPLETED` on remote endpoints.
+  - **Remediation Confirmations:** Success toasts when commands transition from `PENDING` to `EXECUTED` on remote endpoints.
   - **Connection State Alerts:** Alerts informing operators if the telemetry socket enters reconnect backoff.
 - **Resilient Reconnection Loop:** Automatic exponential backoff reconnection protocol maintaining SecOps situational awareness even across transient network interruptions.
 
@@ -1337,12 +1337,12 @@ Guides are keyed to the backend's canonical parameter identifiers. They are info
 
 #### What the mock checks actually do
 
-- `mock_attack_vss_enum_succeeded`: runs a read-only WMI query to enumerate `Win32_ShadowCopy`. It tests whether endpoint detection or audit policies restrict shadow copy reconnaissance (MITRE ATT&CK T1490). It does not delete snapshots.
+- `mock_attack_vss_enum_succeeded`: runs a read-only WMI query to enumerate `Win32_ShadowCopy`. It tests whether endpoint detection or audit policies restrict shadow copy reconnaissance (MITRE ATT&CK T1047). It does not delete snapshots.
 - `mock_attack_mass_rename_succeeded`: executes a **Dual-Probe Validation Architecture**:
   1. *Probe 1 (Protected User Document Library Probe):* Spawns an unapproved process to safely create and rename a dummy file (`.locked`) inside the user's `Documents` folder (`[Environment]::GetFolderPath('MyDocuments')`). This directly exercises Windows Defender Controlled Folder Access (CFA) or behavioral EDR kernel hooks. When CFA is enabled (`Set-MpPreference -EnableControlledFolderAccess Enabled`), Windows actively blocks the attempt at runtime, generates Windows Defender Event ID **1123**, and the agent marks the attack as **BLOCKED (`Safe`)**.
-  2. *Probe 2 (Rapid Mass-Rename Batch Burst):* Creates 100 disposable files in `%TEMP%\r3p_mock_attack` and executes a rapid batch rename burst loop to test behavioral velocity heuristics.
+  2. *Probe 2 (Rapid Mass-Rename Batch Burst):* Creates 100 disposable files in `%TEMP%\r3p_mock_attack` and executes a rapid batch rename burst loop to test behavioral velocity heuristics (Note: Depends on the filename prefix surviving; misses ransomware that completely renames files).
   If either probe is intercepted or throttled, the attack is recorded as blocked. If both execute unhindered, it is recorded as allowed and the host is flagged as vulnerable to runtime ransomware encryption.
 
 #### Offline scan display
 
-After each local collection cycle, the agent builds a local finding list from the endpoint checks. If the `/ingest` request fails or the server returns an unusable response, it displays those local findings and keeps the multi-OS per-finding guide available. The card is explicitly marked **LOCAL SCAN** and **NOT SYNCED**. It does not invent a risk score: the weighted score and policy exceptions are server-side, so the local score is shown as unavailable and local findings may include parameters excluded by server policy. The next successful scan restores the server-calculated score and dashboard synchronization.
+After each local collection cycle, the agent builds a local finding list from the endpoint checks. If the `/ingest` request fails or the server returns an unusable response, it displays those local findings and keeps the multi-OS per-finding guide available. The card is explicitly marked **LOCAL SCAN** and **NOT SYNCED**. The next successful scan restores the server-calculated score and dashboard synchronization.
